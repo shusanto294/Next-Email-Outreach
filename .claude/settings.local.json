@@ -11,7 +11,10 @@
       "Bash(mv:*)",
       "Bash(npx tsx:*)",
       "Bash(npm run lint)",
-      "Bash(npm init:*)"
+      "Bash(npm init:*)",
+      "mcp__ide__getDiagnostics",
+      "Bash(npx next build:*)",
+      "Bash(npm run dev:*)"
     ],
     "deny": []
   }

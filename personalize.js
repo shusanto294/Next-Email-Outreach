@@ -503,6 +503,10 @@ async function personalizeContacts() {
               { $set: { websiteContent: websiteContent } }
             );
             console.log(`   💾 Saved website content for ${contact.email}`);
+            console.log(`   🌐 WEBSITE CONTENT FETCHED:`);
+            console.log(`   ${'='.repeat(50)}`);
+            console.log(websiteContent);
+            console.log(`   ${'='.repeat(50)}`);
             totalWithWebsiteContent++;
           }
         }
@@ -523,7 +527,10 @@ async function personalizeContacts() {
               { $set: { personalization: aiPersonalization } }
             );
             console.log(`   ✨ Generated AI personalization for ${contact.email}`);
-            console.log(`   📝 Preview: "${aiPersonalization.substring(0, 100)}..."`);
+            console.log(`   🤖 FULL AI PERSONALIZATION:`);
+            console.log(`   ${'='.repeat(50)}`);
+            console.log(aiPersonalization);
+            console.log(`   ${'='.repeat(50)}`);
             totalPersonalized++;
           } else {
             console.log(`   ❌ Failed to generate AI personalization for ${contact.email}`);
