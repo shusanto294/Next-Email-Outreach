@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ToggleSwitch } from '@/components/ui/toggle-switch';
-import { Plus, Minus, ArrowLeft, Save } from 'lucide-react';
+import { Plus, Minus, ArrowLeft, Save, Upload } from 'lucide-react';
 import DashboardHeader from '@/components/DashboardHeader';
 
 const sequenceSchema = z.object({
@@ -24,10 +24,8 @@ const campaignSchema = z.object({
   name: z.string().min(1, 'Campaign name is required'),
   description: z.string().optional(),
   sequences: z.array(sequenceSchema).min(1, 'At least one email sequence is required'),
-  listIds: z.array(z.string()).optional(),
   isActive: z.boolean().default(true),
   schedule: z.object({
-    timezone: z.string().default('Asia/Dhaka'),
     sendingHours: z.object({
       start: z.string().default('09:00'),
       end: z.string().default('17:00'),
@@ -56,14 +54,6 @@ interface EmailAccount {
   isActive: boolean;
 }
 
-interface List {
-  _id: string;
-  name: string;
-  contactCount: number;
-  isActive: boolean;
-  enableAiPersonalization: boolean;
-  personalizationPrompt?: string;
-}
 
 interface Contact {
   _id?: string;
@@ -83,6 +73,7 @@ interface Contact {
   lastContacted?: Date;
   timesContacted: number;
   additionalField?: string;
+  campaignId?: string;
 }
 
 interface Campaign {
@@ -104,16 +95,8 @@ interface Campaign {
     delayDays: number;
     isActive: boolean;
   }>;
-  listIds: Array<{
-    _id: string;
-    name: string;
-    contactCount: number;
-    isActive: boolean;
-    enableAiPersonalization: boolean;
-  }>;
-  contacts: Contact[];
+  contactCount: number;
   schedule: {
-    timezone: string;
     sendingHours: {
       start: string;
       end: string;
@@ -130,8 +113,14 @@ export default function EditCampaignPage() {
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [emailAccounts, setEmailAccounts] = useState<EmailAccount[]>([]);
   const [selectedEmailAccounts, setSelectedEmailAccounts] = useState<string[]>([]);
-  const [lists, setLists] = useState<List[]>([]);
-  const [selectedLists, setSelectedLists] = useState<string[]>([]);
+  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [csvData, setCsvData] = useState('');
+  const [columnMapping, setColumnMapping] = useState<Record<string, string>>({});
+  const [detectedColumns, setDetectedColumns] = useState<string[]>([]);
+  const [showUploadForm, setShowUploadForm] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadedContacts, setUploadedContacts] = useState<Contact[]>([]);
+  const [message, setMessage] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -170,15 +159,12 @@ export default function EditCampaignPage() {
     }
 
     try {
-      // Fetch campaign, email accounts, and lists
-      const [campaignRes, emailAccountsRes, listsRes] = await Promise.all([
+      // Fetch campaign and email accounts
+      const [campaignRes, emailAccountsRes] = await Promise.all([
         fetch(`/api/campaigns/${campaignId}`, {
           headers: { 'Authorization': `Bearer ${token}` },
         }),
         fetch('/api/email-accounts', {
-          headers: { 'Authorization': `Bearer ${token}` },
-        }),
-        fetch('/api/lists', {
           headers: { 'Authorization': `Bearer ${token}` },
         })
       ]);
@@ -191,39 +177,20 @@ export default function EditCampaignPage() {
         throw new Error('Failed to fetch email accounts');
       }
 
-      if (!listsRes.ok) {
-        throw new Error('Failed to fetch lists');
-      }
 
-      const [campaignData, emailAccountsData, listsData] = await Promise.all([
+      const [campaignData, emailAccountsData] = await Promise.all([
         campaignRes.json(),
-        emailAccountsRes.json(),
-        listsRes.json()
+        emailAccountsRes.json()
       ]);
 
       const campaign = campaignData.campaign;
       setCampaign(campaign);
       setEmailAccounts(emailAccountsData.emailAccounts.filter((acc: EmailAccount) => acc.isActive));
-      setLists(listsData.lists.filter((list: List) => list.isActive));
       
       // Set current email accounts as selected
       setSelectedEmailAccounts(campaign.emailAccountIds.map(acc => acc._id));
       
-      // Set current lists as selected - handle both object and string array cases
-      let currentListIds: string[] = [];
-      if (campaign.listIds) {
-        if (Array.isArray(campaign.listIds)) {
-          // If listIds contains objects with _id property
-          if (campaign.listIds.length > 0 && typeof campaign.listIds[0] === 'object' && '_id' in campaign.listIds[0]) {
-            currentListIds = campaign.listIds.map(list => list._id);
-          }
-          // If listIds is already an array of strings
-          else if (campaign.listIds.length > 0 && typeof campaign.listIds[0] === 'string') {
-            currentListIds = campaign.listIds as string[];
-          }
-        }
-      }
-      setSelectedLists(currentListIds);
+      // Campaign contact count is now handled via contactCount field
 
 
       // Reset form with campaign data
@@ -231,7 +198,6 @@ export default function EditCampaignPage() {
         name: campaign.name,
         description: campaign.description || '',
         sequences: campaign.sequences,
-        listIds: currentListIds,
         isActive: campaign.isActive,
         schedule: campaign.schedule,
         trackOpens: campaign.trackOpens,
@@ -248,12 +214,258 @@ export default function EditCampaignPage() {
 
 
 
+  const parseCSVLine = (line: string): string[] => {
+    const result = [];
+    let current = '';
+    let inQuotes = false;
+    
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      
+      if (char === '"') {
+        if (inQuotes && line[i + 1] === '"') {
+          current += '"';
+          i++;
+        } else {
+          inQuotes = !inQuotes;
+        }
+      } else if (char === ',' && !inQuotes) {
+        result.push(current.trim());
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+    
+    result.push(current.trim());
+    return result;
+  };
+
+  const autoMapColumns = (csvColumns: string[]): Record<string, string> => {
+    const mapping: Record<string, string> = {};
+    
+    const exactMatches: Record<string, string> = {
+      'Email': 'email',
+      'First Name': 'firstName', 
+      'Last Name': 'lastName',
+      'Company': 'company',
+      'Company Name for Emails': 'company',
+      'Title': 'position',
+      'Seniority': 'position',
+      'City': 'city',
+      'Company City': 'city',
+      'State': 'state',
+      'Company State': 'state',
+      'Country': 'country',
+      'Company Country': 'country',
+      'Industry': 'industry',
+      'Annual Revenue': 'revenue',
+      '# Employees': 'employees',
+      'Mobile Phone': 'phone',
+      'Work Direct Phone': 'phone',
+      'Corporate Phone': 'phone',
+      'Company Phone': 'phone',
+      'Home Phone': 'phone',
+      'Other Phone': 'phone',
+      'Website': 'website',
+      'Person Linkedin Url': 'linkedin',
+      'Company Linkedin Url': 'linkedin',
+    };
+
+    csvColumns.forEach(csvCol => {
+      if (exactMatches[csvCol]) {
+        mapping[exactMatches[csvCol]] = csvCol;
+      }
+    });
+
+    const fieldMappings = {
+      'email': ['email', 'primary email', 'secondary email', 'tertiary email', 'work email', 'contact email', 'e-mail'],
+      'firstName': ['first name', 'firstname', 'first_name', 'fname', 'given name'],
+      'lastName': ['last name', 'lastname', 'last_name', 'lname', 'surname', 'family name'],
+      'company': ['company', 'company name', 'organization', 'employer', 'business', 'company name for emails'],
+      'position': ['title', 'position', 'job title', 'role', 'designation', 'seniority'],
+      'phone': ['phone', 'mobile phone', 'work direct phone', 'corporate phone', 'contact phone', 'telephone', 'home phone', 'other phone', 'company phone'],
+      'website': ['website', 'company website', 'web site', 'url', 'domain'],
+      'linkedin': ['person linkedin url', 'company linkedin url', 'linkedin', 'linkedin url', 'linkedin profile'],
+      'city': ['city', 'company city', 'location'],
+      'state': ['state', 'company state', 'province', 'region'],
+      'country': ['country', 'company country', 'nation'],
+      'industry': ['industry', 'sector', 'business type', 'departments'],
+      'revenue': ['annual revenue', 'revenue', 'company revenue', 'total funding', 'latest funding amount'],
+      'employees': ['# employees', 'employees', 'company size', 'headcount', 'number of retail locations'],
+    };
+
+    csvColumns.forEach(csvCol => {
+      const normalizedCsvCol = csvCol.toLowerCase().trim();
+      
+      for (const [contactField, variations] of Object.entries(fieldMappings)) {
+        if (mapping[contactField]) continue;
+        
+        if (variations.some(variation => normalizedCsvCol.includes(variation))) {
+          mapping[contactField] = csvCol;
+          break;
+        }
+      }
+    });
+
+    return mapping;
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setMessage('');
+    setCsvFile(file);
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const csvContent = event.target?.result as string;
+      setCsvData(csvContent);
+      
+      const lines = csvContent.trim().split('\n');
+      if (lines.length > 0) {
+        const headers = parseCSVLine(lines[0]);
+        setDetectedColumns(headers);
+        setColumnMapping(autoMapColumns(headers));
+      }
+      
+      setShowUploadForm(true);
+    };
+    
+    reader.readAsText(file);
+  };
+
+  const handleUploadContacts = async () => {
+    if (!csvData) return;
+
+    setIsUploading(true);
+    setError('');
+
+    try {
+      const lines = csvData.trim().split('\n');
+      if (lines.length < 2) {
+        throw new Error('CSV must have at least a header row and one data row');
+      }
+
+      const headers = parseCSVLine(lines[0]);
+      const contacts = [];
+
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+        
+        const values = parseCSVLine(line);
+        const contact: any = {};
+
+        Object.entries(columnMapping).forEach(([contactField, csvColumn]) => {
+          const columnIndex = headers.findIndex(h => h === csvColumn);
+          if (columnIndex !== -1 && columnIndex < values.length && values[columnIndex]) {
+            contact[contactField] = values[columnIndex];
+          }
+        });
+
+        if (contact.email && contact.email.includes('@')) {
+          contacts.push(contact);
+        }
+      }
+
+      if (contacts.length === 0) {
+        throw new Error('No valid contacts found with email addresses');
+      }
+
+      const token = localStorage.getItem('token');
+      console.log('Importing contacts:', { contactsCount: contacts.length, campaignId });
+      
+      const response = await fetch('/api/contacts/import', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          contacts,
+          campaignId: campaignId
+        }),
+      });
+
+      console.log('Import response status:', response.status);
+      console.log('Import response headers:', response.headers);
+
+      if (!response.ok) {
+        console.error('Import failed with status:', response.status);
+        const responseText = await response.text();
+        console.error('Response text:', responseText);
+        
+        let errorData;
+        try {
+          errorData = JSON.parse(responseText);
+        } catch (e) {
+          throw new Error(`Import failed with status ${response.status}. Response: ${responseText}`);
+        }
+        throw new Error(errorData.error || 'Failed to import contacts');
+      }
+
+      const responseText = await response.text();
+      console.log('Success response text:', responseText);
+      
+      let responseData;
+      try {
+        responseData = JSON.parse(responseText);
+      } catch (e) {
+        console.error('Failed to parse JSON response:', responseText);
+        throw new Error('Invalid response format from server');
+      }
+      
+      if (responseData.contacts) {
+        const newContactsCount = responseData.contacts.length;
+        const previousContactCount = campaign?.contactCount || 0;
+        const totalContactsNow = previousContactCount + newContactsCount;
+        const duplicatesCount = responseData.errors ? responseData.errors.filter(error => error.includes('already exists')).length : 0;
+        const processedCount = responseData.total || contacts.length;
+        
+        setUploadedContacts(responseData.contacts);
+        
+        // Build detailed success message
+        let detailedMessage = `CSV Import Complete!\n`;
+        detailedMessage += `✅ ${newContactsCount} new contacts added successfully\n`;
+        if (duplicatesCount > 0) {
+          detailedMessage += `⚠️ ${duplicatesCount} contacts were already existing (skipped)\n`;
+        }
+        detailedMessage += `📊 Total contacts processed: ${processedCount}\n`;
+        detailedMessage += `🎯 Total contacts in campaign now: ${totalContactsNow}`;
+        
+        setMessage(detailedMessage);
+      }
+      
+      setShowUploadForm(false);
+      setCsvFile(null);
+      setCsvData('');
+      setColumnMapping({});
+      setDetectedColumns([]);
+      
+      // Refresh campaign data to update contact count
+      await fetchData();
+    } catch (error: any) {
+      setError(error.message);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleUploadCancel = () => {
+    setShowUploadForm(false);
+    setCsvFile(null);
+    setCsvData('');
+    setColumnMapping({});
+    setDetectedColumns([]);
+  };
+
   const onSubmit = async (data: CampaignForm) => {
     console.log('=== UPDATING CAMPAIGN ===');
     console.log('Form data:', data);
     console.log('Selected email accounts:', selectedEmailAccounts);
-    console.log('Selected lists:', selectedLists);
-    console.log('Form listIds:', data.listIds);
+    console.log('Uploaded contacts:', uploadedContacts);
     console.log('Form errors:', errors);
 
     // Clear any previous errors
@@ -265,13 +477,7 @@ export default function EditCampaignPage() {
     //   return;
     // }
 
-    // Check both selectedLists state and form data listIds
-    const listsToUse = selectedLists.length > 0 ? selectedLists : data.listIds;
-    // Lists are now optional - campaign can be updated without lists
-    // if (!listsToUse || listsToUse.length === 0) {
-    //   setError('Please select at least one list');
-    //   return;
-    // }
+    // Contacts are optional - campaigns can be updated without contacts
 
     // Validate sequences
     if (!data.sequences || data.sequences.length === 0) {
@@ -297,7 +503,6 @@ export default function EditCampaignPage() {
       const updatePayload = {
         ...data,
         emailAccountIds: selectedEmailAccounts.length > 0 ? selectedEmailAccounts : [],
-        listIds: listsToUse || [],
       };
       console.log('Update payload:', updatePayload);
 
@@ -345,17 +550,6 @@ export default function EditCampaignPage() {
     } else {
       setSelectedEmailAccounts([...selectedEmailAccounts, accountId]);
     }
-  };
-
-  const toggleListSelection = (listId: string) => {
-    let newSelectedLists: string[];
-    if (selectedLists.includes(listId)) {
-      newSelectedLists = selectedLists.filter(id => id !== listId);
-    } else {
-      newSelectedLists = [...selectedLists, listId];
-    }
-    setSelectedLists(newSelectedLists);
-    setValue('listIds', newSelectedLists);
   };
 
 
@@ -407,6 +601,7 @@ export default function EditCampaignPage() {
             {error}
           </div>
         )}
+
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-8">
           {/* Campaign Details */}
@@ -546,97 +741,211 @@ export default function EditCampaignPage() {
                 )}
               </div>
 
-              {/* List Selection */}
+              {/* CSV Upload Section */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Contact Lists (Optional - Select lists to target for this campaign)
-                </label>
-                {lists.length === 0 ? (
-                  <div className="text-center py-8">
-                    <p className="text-gray-600 mb-4">No lists available</p>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => router.push('/dashboard/lists')}
-                    >
-                      Create Lists First
-                    </Button>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-medium text-gray-700">
+                    Upload CSV Contacts
+                  </label>
+                  {campaign?.contactCount && campaign.contactCount > 0 && (
+                    <span className="text-sm text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                      {campaign.contactCount} contacts already added
+                    </span>
+                  )}
+                </div>
+                {uploadedContacts.length === 0 ? (
+                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+                    <div className="space-y-2">
+                      <div className="text-gray-500">
+                        <Upload className="w-8 h-8 mx-auto mb-2" />
+                        <p className="text-sm">Upload a CSV file with your contacts</p>
+                      </div>
+                      <label htmlFor="csv-upload" className="cursor-pointer">
+                        <Button type="button" variant="outline" asChild>
+                          <span>Choose CSV File</span>
+                        </Button>
+                      </label>
+                      <input
+                        id="csv-upload"
+                        type="file"
+                        accept=".csv"
+                        onChange={handleFileUpload}
+                        className="hidden"
+                      />
+                    </div>
                   </div>
                 ) : (
-                  <div className="space-y-2 max-h-50 overflow-y-auto border rounded-lg p-3">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm text-gray-600">
-                        {selectedLists.length} of {lists.length} lists selected
-                      </span>
+                  <div className="border rounded-lg p-4 bg-green-50 border-green-200">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="text-lg font-semibold text-green-700">
+                          {uploadedContacts.length} contacts ready
+                        </div>
+                        <div className="text-sm text-green-600">
+                          Contacts have been uploaded and will be used for this campaign
+                        </div>
+                      </div>
                       <div className="space-x-2">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            const allListIds = lists.map(list => list._id);
-                            setSelectedLists(allListIds);
-                            setValue('listIds', allListIds);
-                          }}
-                        >
-                          Select All
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            setSelectedLists([]);
-                            setValue('listIds', []);
-                          }}
-                        >
-                          Deselect All
-                        </Button>
+                        <label htmlFor="csv-upload-replace" className="cursor-pointer">
+                          <Button type="button" variant="outline" size="sm" asChild>
+                            <span>Replace CSV</span>
+                          </Button>
+                        </label>
+                        <input
+                          id="csv-upload-replace"
+                          type="file"
+                          accept=".csv"
+                          onChange={handleFileUpload}
+                          className="hidden"
+                        />
                       </div>
                     </div>
-                    
-                    {lists.map((list) => {
-                      const isSelected = selectedLists.includes(list._id);
-                      return (
-                        <div key={list._id} className={`flex items-center space-x-3 p-2 border rounded ${isSelected ? 'border-green-300 bg-green-50' : ''}`}>
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={() => toggleListSelection(list._id)}
-                            className="rounded"
-                          />
-                        <div className="flex-1">
-                          <div className="font-medium">
-                            {list.name}
-                            {campaign && campaign.listIds && campaign.listIds.some(l => (typeof l === 'object' ? l._id : l) === list._id) && (
-                              <span className="ml-2 px-2 py-1 bg-green-100 text-green-800 text-xs rounded">
-                                Current
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-sm text-gray-600">
-                            {list.contactCount} contacts
-                            {list.enableAiPersonalization && (
-                              <span className="ml-2 px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded">
-                                AI Personalization
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        </div>
-                      );
-                    })}
-                    
-                    {selectedLists.length > 1 && (
-                      <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded text-sm text-green-700">
-                        <strong>Note:</strong> This campaign will target contacts from all {selectedLists.length} selected lists.
-                      </div>
-                    )}
                   </div>
                 )}
               </div>
             </CardContent>
           </Card>
+
+          {/* Upload CSV Form */}
+          {showUploadForm && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Import Contacts from CSV</CardTitle>
+                <CardDescription>
+                  Review and adjust column mappings before importing
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-6">
+                  {/* File Info */}
+                  <div className="bg-gray-50 p-4 rounded-md">
+                    <p className="text-sm font-medium text-gray-700">
+                      File: {csvFile?.name}
+                    </p>
+                    <p className="text-sm text-gray-600">
+                      Detected {detectedColumns.length} columns
+                    </p>
+                  </div>
+
+                  {/* Column Mapping */}
+                  <div>
+                    <h3 className="text-lg font-medium text-gray-900 mb-4">Column Mapping</h3>
+                    <div className="grid md:grid-cols-2 gap-4">
+                      {[
+                        { key: 'email', label: 'Email *', required: true },
+                        { key: 'firstName', label: 'First Name' },
+                        { key: 'lastName', label: 'Last Name' },
+                        { key: 'company', label: 'Company' },
+                        { key: 'position', label: 'Position/Title' },
+                        { key: 'phone', label: 'Phone' },
+                        { key: 'website', label: 'Website' },
+                        { key: 'linkedin', label: 'LinkedIn' },
+                        { key: 'city', label: 'City' },
+                        { key: 'state', label: 'State' },
+                        { key: 'country', label: 'Country' },
+                        { key: 'industry', label: 'Industry' },
+                        { key: 'revenue', label: 'Annual Revenue' },
+                        { key: 'employees', label: '# of Employees' },
+                      ].map(field => (
+                        <div key={field.key}>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            {field.label}
+                          </label>
+                          <select
+                            value={columnMapping[field.key] || ''}
+                            onChange={(e) => setColumnMapping({
+                              ...columnMapping,
+                              [field.key]: e.target.value
+                            })}
+                            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                            required={field.required}
+                          >
+                            <option value="">-- Skip this field --</option>
+                            {detectedColumns.map(col => (
+                              <option key={col} value={col}>{col}</option>
+                            ))}
+                          </select>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Preview */}
+                  {csvData && (
+                    <div>
+                      <h3 className="text-lg font-medium text-gray-900 mb-4">Preview (First 3 rows)</h3>
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full text-sm border">
+                          <thead>
+                            <tr className="bg-gray-50">
+                              {Object.entries(columnMapping)
+                                .filter(([, csvCol]) => csvCol)
+                                .map(([contactField, csvCol]) => (
+                                  <th key={contactField} className="p-2 text-left border-b font-medium">
+                                    {contactField} ← {csvCol}
+                                  </th>
+                                ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {csvData.trim().split('\n').slice(1, 4).map((line, index) => {
+                              if (!line.trim()) return null;
+                              const values = parseCSVLine(line);
+                              const headers = parseCSVLine(csvData.trim().split('\n')[0]);
+                              
+                              return (
+                                <tr key={index} className="border-b">
+                                  {Object.entries(columnMapping)
+                                    .filter(([, csvCol]) => csvCol)
+                                    .map(([contactField, csvCol]) => {
+                                      const colIndex = headers.findIndex(h => h === csvCol);
+                                      return (
+                                        <td key={contactField} className="p-2 border-b">
+                                          {values[colIndex] || '-'}
+                                        </td>
+                                      );
+                                    })}
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Actions */}
+                  <div className="flex space-x-2">
+                    <Button 
+                      type="button"
+                      onClick={handleUploadContacts} 
+                      disabled={isUploading || !columnMapping.email}
+                    >
+                      {isUploading ? 'Importing...' : 'Import Contacts'}
+                    </Button>
+                    <Button 
+                      type="button" 
+                      variant="outline" 
+                      onClick={handleUploadCancel}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* CSV Import Status Message */}
+          {message && (
+            <div className={`p-4 rounded-md ${
+              message.includes('success') || message.includes('Successfully') || message.includes('imported') || message.includes('CSV Import Complete')
+                ? 'bg-green-50 text-green-700 border border-green-200' 
+                : 'bg-red-50 text-red-700 border border-red-200'
+            }`}>
+              <pre className="whitespace-pre-wrap font-sans text-sm">{message}</pre>
+            </div>
+          )}
 
           {/* Email Sequences */}
           <Card>
@@ -754,24 +1063,6 @@ Best regards,
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Timezone
-                </label>
-                <select
-                  {...register('schedule.timezone')}
-                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                >
-                  <option value="Asia/Dhaka">Asia/Dhaka (UTC+6)</option>
-                  <option value="UTC">UTC (UTC+0)</option>
-                  <option value="America/New_York">America/New_York (UTC-5)</option>
-                  <option value="Europe/London">Europe/London (UTC+0)</option>
-                  <option value="Asia/Kolkata">Asia/Kolkata (UTC+5:30)</option>
-                  <option value="Asia/Dubai">Asia/Dubai (UTC+4)</option>
-                  <option value="Asia/Singapore">Asia/Singapore (UTC+8)</option>
-                </select>
-              </div>
-
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authenticateUser } from '@/lib/auth';
 import Contact from '@/models/Contact';
-import List from '@/models/List';
+import Campaign from '@/models/Campaign';
 import connectDB from '@/lib/mongodb';
 
 // GET all contacts for the authenticated user
@@ -13,7 +13,7 @@ export async function GET(req: NextRequest) {
     }
 
     const { searchParams } = new URL(req.url);
-    const listId = searchParams.get('listId');
+    const campaignId = searchParams.get('campaignId');
     const status = searchParams.get('status');
     const page = parseInt(searchParams.get('page') || '1');
     const limit = parseInt(searchParams.get('limit') || '50');
@@ -24,8 +24,8 @@ export async function GET(req: NextRequest) {
     // Build query
     const query: any = { userId: user._id };
     
-    if (listId) {
-      query.listId = listId;
+    if (campaignId) {
+      query.campaignId = campaignId;
     }
     
     if (status) {
@@ -46,8 +46,8 @@ export async function GET(req: NextRequest) {
 
     // Get contacts with pagination
     const contacts = await Contact.find(query)
-      .populate('listId', 'name')
-      .sort({ createdAt: 1 })
+      .populate('campaignId', 'name')
+      .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(limit);
 
@@ -75,10 +75,10 @@ export async function POST(req: NextRequest) {
     }
 
     const contactData = await req.json();
-    const { listId, email } = contactData;
+    const { campaignId, email } = contactData;
 
-    if (!listId || !email) {
-      return NextResponse.json({ error: 'List ID and email are required' }, { status: 400 });
+    if (!email) {
+      return NextResponse.json({ error: 'Email is required' }, { status: 400 });
     }
 
     // Validate email format
@@ -89,15 +89,16 @@ export async function POST(req: NextRequest) {
 
     await connectDB();
 
-    // Check if list exists and belongs to user
-    const list = await List.findOne({
-      _id: listId,
-      userId: user._id,
-      isActive: true
-    });
+    // Check if campaign exists and belongs to user (if campaignId provided)
+    if (campaignId) {
+      const campaign = await Campaign.findOne({
+        _id: campaignId,
+        userId: user._id
+      });
 
-    if (!list) {
-      return NextResponse.json({ error: 'List not found' }, { status: 404 });
+      if (!campaign) {
+        return NextResponse.json({ error: 'Campaign not found' }, { status: 404 });
+      }
     }
 
     // Check if contact with this email already exists for this user
@@ -111,9 +112,8 @@ export async function POST(req: NextRequest) {
     }
 
     // Create new contact
-    const newContact = new Contact({
+    const contactPayload: any = {
       userId: user._id,
-      listId,
       email: email.toLowerCase().trim(),
       firstName: contactData.firstName?.trim(),
       lastName: contactData.lastName?.trim(),
@@ -124,16 +124,16 @@ export async function POST(req: NextRequest) {
       linkedin: contactData.linkedin?.trim(),
       companyLinkedin: contactData.companyLinkedin?.trim(),
       personalization: contactData.personalization?.trim(),
-      source: contactData.source?.trim(),
+      source: contactData.source?.trim() || 'Manual Entry',
       notes: contactData.notes?.trim(),
-    });
+    };
 
+    if (campaignId) {
+      contactPayload.campaignId = campaignId;
+    }
+
+    const newContact = new Contact(contactPayload);
     await newContact.save();
-
-    // Update list contact count
-    await List.findByIdAndUpdate(listId, {
-      $inc: { contactCount: 1 }
-    });
 
     return NextResponse.json({
       message: 'Contact created successfully',

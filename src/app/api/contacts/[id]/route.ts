@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authenticateUser } from '@/lib/auth';
 import Contact from '@/models/Contact';
-import List from '@/models/List';
 import connectDB from '@/lib/mongodb';
 
 // GET a specific contact
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const user = await authenticateUser(req);
     if (!user) {
@@ -13,11 +12,12 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     }
 
     await connectDB();
-
+    
+    const { id } = await params;
     const contact = await Contact.findOne({
-      _id: params.id,
+      _id: id,
       userId: user._id,
-    }).populate('listId', 'name');
+    }).populate('campaignId', 'name');
 
     if (!contact) {
       return NextResponse.json({ error: 'Contact not found' }, { status: 404 });
@@ -31,7 +31,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 }
 
 // PUT update a specific contact
-export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const user = await authenticateUser(req);
     if (!user) {
@@ -50,10 +50,12 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     }
 
     await connectDB();
+    
+    const { id } = await params;
 
     // Check if contact exists and belongs to user
     const existingContact = await Contact.findOne({
-      _id: params.id,
+      _id: id,
       userId: user._id,
     });
 
@@ -66,7 +68,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
       const duplicateContact = await Contact.findOne({
         userId: user._id,
         email: email.toLowerCase().trim(),
-        _id: { $ne: params.id }
+        _id: { $ne: id }
       });
 
       if (duplicateContact) {
@@ -86,18 +88,16 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     if (contactData.website !== undefined) updateData.website = contactData.website?.trim();
     if (contactData.linkedin !== undefined) updateData.linkedin = contactData.linkedin?.trim();
     if (contactData.companyLinkedin !== undefined) updateData.companyLinkedin = contactData.companyLinkedin?.trim();
-    if (contactData.tags !== undefined) updateData.tags = Array.isArray(contactData.tags) ? contactData.tags.filter(tag => tag && tag.trim()).map(tag => tag.trim()) : [];
-    if (contactData.customFields !== undefined) updateData.customFields = contactData.customFields || {};
-    if (contactData.personalizationData !== undefined) updateData.personalizationData = contactData.personalizationData || {};
     if (contactData.status !== undefined) updateData.status = contactData.status;
     if (contactData.source !== undefined) updateData.source = contactData.source?.trim();
     if (contactData.notes !== undefined) updateData.notes = contactData.notes?.trim();
+    if (contactData.personalization !== undefined) updateData.personalization = contactData.personalization?.trim();
 
     const updatedContact = await Contact.findByIdAndUpdate(
-      params.id,
+      id,
       updateData,
       { new: true }
-    ).populate('listId', 'name');
+    ).populate('campaignId', 'name');
 
     return NextResponse.json({
       message: 'Contact updated successfully',
@@ -110,7 +110,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
 }
 
 // DELETE a specific contact
-export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const user = await authenticateUser(req);
     if (!user) {
@@ -118,10 +118,12 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
     }
 
     await connectDB();
+    
+    const { id } = await params;
 
     // Check if contact exists and belongs to user
     const existingContact = await Contact.findOne({
-      _id: params.id,
+      _id: id,
       userId: user._id,
     });
 
@@ -130,12 +132,7 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
     }
 
     // Delete the contact
-    await Contact.findByIdAndDelete(params.id);
-
-    // Update list contact count
-    await List.findByIdAndUpdate(existingContact.listId, {
-      $inc: { contactCount: -1 }
-    });
+    await Contact.findByIdAndDelete(id);
 
     return NextResponse.json({ message: 'Contact deleted successfully' });
   } catch (error) {

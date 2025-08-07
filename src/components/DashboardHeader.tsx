@@ -20,14 +20,11 @@ export default function DashboardHeader() {
             <Button variant="outline" onClick={() => router.push('/dashboard/email-accounts')}>
               Email Accounts
             </Button>
-            <Button variant="outline" onClick={() => router.push('/dashboard/lists')}>
-              Lists
+            <Button variant="outline" onClick={() => router.push('/dashboard/campaigns')}>
+              Campaigns
             </Button>
             <Button variant="outline" onClick={() => router.push('/dashboard/contacts')}>
               Contacts
-            </Button>
-            <Button variant="outline" onClick={() => router.push('/dashboard/campaigns')}>
-              Campaigns
             </Button>
           </div>
         </div>

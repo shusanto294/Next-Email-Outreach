@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { authenticateUser } from '@/lib/auth';
 import Campaign from '@/models/Campaign';
 import EmailAccount from '@/models/EmailAccount';
+import Contact from '@/models/Contact';
 import connectDB from '@/lib/mongodb';
 
 const sequenceSchema = z.object({
@@ -18,7 +19,7 @@ const campaignSchema = z.object({
   description: z.string().optional(),
   emailAccountIds: z.array(z.string()).optional(),
   sequences: z.array(sequenceSchema).min(1, 'At least one email sequence is required'),
-  listIds: z.array(z.string()).default([]),
+  contactIds: z.array(z.string()).default([]),
   isActive: z.boolean().default(true),
   schedule: z.object({
     timezone: z.string().default('UTC'),
@@ -47,7 +48,22 @@ export async function GET(req: NextRequest) {
       .populate('emailAccountIds', 'email provider fromName replyToEmail')
       .sort({ createdAt: -1 });
 
-    return NextResponse.json({ campaigns });
+    // Get contact counts for each campaign
+    const campaignsWithContactCounts = await Promise.all(
+      campaigns.map(async (campaign) => {
+        const contactCount = await Contact.countDocuments({
+          campaignId: campaign._id,
+          userId: user._id
+        });
+
+        const campaignObj = campaign.toObject();
+        campaignObj.contactCount = contactCount;
+        
+        return campaignObj;
+      })
+    );
+
+    return NextResponse.json({ campaigns: campaignsWithContactCounts });
   } catch (error) {
     console.error('Get campaigns error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
@@ -94,7 +110,22 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Contacts are now validated by the schema and stored directly in the campaign
+    // Verify contacts if provided
+    if (validatedData.contactIds && validatedData.contactIds.length > 0) {
+      console.log('Looking for contacts:', validatedData.contactIds);
+      const contacts = await Contact.find({
+        _id: { $in: validatedData.contactIds },
+      });
+      console.log('Contacts found:', contacts.length);
+
+      if (contacts.length !== validatedData.contactIds.length) {
+        console.log('Some contacts not found');
+        return NextResponse.json(
+          { error: 'Some contacts not found' },
+          { status: 400 }
+        );
+      }
+    }
 
     console.log('Creating campaign with data:', {
       ...validatedData,

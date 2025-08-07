@@ -19,11 +19,7 @@ interface Campaign {
     fromName?: string;
     replyToEmail?: string;
   }>;
-  listIds: Array<{
-    _id: string;
-    name: string;
-    contactCount: number;
-  }>;
+  contactCount: number;
   sequences: Array<{
     stepNumber: number;
     subject: string;
@@ -168,7 +164,7 @@ export default function CampaignsPage() {
             delayDays: 0,
             isActive: true,
           }],
-          listIds: [],
+          contactCount: 0,
           isActive: false,
           schedule: {
             timezone: 'Asia/Dhaka',
@@ -303,11 +299,13 @@ export default function CampaignsPage() {
                   </div>
 
                   <div className="grid md:grid-cols-4 gap-4 mb-4">
-                    <div className="bg-gray-50 p-3 rounded">
-                      <div className="text-sm text-gray-600">Lists</div>
-                      <div className="text-lg font-medium">{campaign.listIds.length}</div>
-                      <div className="text-xs text-gray-500 mt-1">
-                        {campaign.listIds.reduce((sum, list) => sum + list.contactCount, 0)} contacts
+                    <div className="bg-blue-50 p-3 rounded border border-blue-200">
+                      <div className="text-sm text-blue-600">Total Contacts</div>
+                      <div className="text-2xl font-bold text-blue-700">
+                        {campaign.contactCount || 0}
+                      </div>
+                      <div className="text-xs text-blue-500 mt-1">
+                        uploaded directly to campaign
                       </div>
                     </div>
                     <div className="bg-gray-50 p-3 rounded">

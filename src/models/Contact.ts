@@ -2,7 +2,7 @@ import mongoose, { Document, Model, Schema } from 'mongoose';
 
 export interface IContact extends Document {
   userId: mongoose.Types.ObjectId;
-  listId: mongoose.Types.ObjectId;
+  campaignId?: mongoose.Types.ObjectId;
   email: string;
   firstName?: string;
   lastName?: string;
@@ -37,10 +37,10 @@ const ContactSchema = new Schema<IContact>(
       ref: 'User',
       required: true,
     },
-    listId: {
+    campaignId: {
       type: Schema.Types.ObjectId,
-      ref: 'List',
-      required: true,
+      ref: 'Campaign',
+      required: false,
     },
     email: {
       type: String,
@@ -164,9 +164,9 @@ const ContactSchema = new Schema<IContact>(
 );
 
 // Create indexes for efficient queries
-ContactSchema.index({ userId: 1, listId: 1 });
+ContactSchema.index({ userId: 1, campaignId: 1 }, { sparse: true });
+ContactSchema.index({ campaignId: 1, status: 1 }, { sparse: true });
 ContactSchema.index({ userId: 1, email: 1 }, { unique: true });
-ContactSchema.index({ listId: 1, status: 1 });
 ContactSchema.index({ email: 1 });
 ContactSchema.index({ status: 1 });
 ContactSchema.index({ emailStatus: 1 });

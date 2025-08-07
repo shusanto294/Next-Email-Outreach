@@ -25,6 +25,7 @@ export async function GET(req: NextRequest) {
         plan: user.plan,
         emailsSent: user.emailsSent,
         emailsLimit: user.emailsLimit,
+        timezone: user.timezone,
         aiProvider: user.aiProvider,
         openaiApiKey: user.openaiApiKey,
         openaiModel: user.openaiModel,

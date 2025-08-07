@@ -18,14 +18,15 @@ export interface ICampaign extends Document {
   description?: string;
   emailAccountIds: mongoose.Types.ObjectId[];
   sequences: IEmailSequence[];
-  listIds: mongoose.Types.ObjectId[];
+  contactIds: mongoose.Types.ObjectId[];
   customVariables?: Array<{
     name: string;
     defaultValue: string;
   }>;
+  nextEmailAccountToUse: number;
+  nextContactToUse: number;
   isActive: boolean;
   schedule: {
-    timezone: string;
     sendingHours: {
       start: string;
       end: string;
@@ -112,10 +113,9 @@ const CampaignSchema = new Schema<ICampaign>(
       required: true,
     }],
     sequences: [EmailSequenceSchema],
-    listIds: [{
+    contactIds: [{
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'List',
-      required: true,
+      ref: 'Contact',
     }],
     customVariables: [{
       name: {
@@ -129,15 +129,19 @@ const CampaignSchema = new Schema<ICampaign>(
         trim: true,
       },
     }],
+    nextEmailAccountToUse: {
+      type: Number,
+      default: 0,
+    },
+    nextContactToUse: {
+      type: Number,
+      default: 0,
+    },
     isActive: {
       type: Boolean,
       default: true,
     },
     schedule: {
-      timezone: {
-        type: String,
-        default: 'Asia/Dhaka',
-      },
       sendingHours: {
         start: {
           type: String,
