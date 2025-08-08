@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authenticateUser } from '@/lib/auth';
 import Contact from '@/models/Contact';
+import Campaign from '@/models/Campaign';
 import connectDB from '@/lib/mongodb';
 
 // POST bulk import contacts
@@ -62,7 +63,7 @@ export async function POST(req: NextRequest) {
       // Add to existing emails set to prevent duplicates within this import
       existingEmails.add(email);
 
-      const contactData: any = {
+      const contactData: Record<string, unknown> = {
         userId: user._id,
         email,
         firstName: contact.firstName?.trim(),
@@ -78,15 +79,12 @@ export async function POST(req: NextRequest) {
         notes: contact.notes?.trim(),
       };
 
-      // Add campaignId if provided
-      if (campaignId) {
-        contactData.campaignId = campaignId;
-      }
+      // Note: We no longer set campaignId on individual contacts
 
       validContacts.push(contactData);
     }
 
-    let importedContacts = [];
+    const importedContacts = [];
     let importedCount = 0;
     if (validContacts.length > 0) {
       // Insert valid contacts in batches
@@ -96,6 +94,23 @@ export async function POST(req: NextRequest) {
         const insertedContacts = await Contact.insertMany(batch);
         importedContacts.push(...insertedContacts);
         importedCount += batch.length;
+      }
+
+      // If campaignId is provided, add contact IDs to the campaign
+      if (campaignId && importedContacts.length > 0) {
+        const contactIds = importedContacts.map(contact => contact._id);
+        
+        await Campaign.findByIdAndUpdate(
+          campaignId,
+          { 
+            $addToSet: { 
+              contactIds: { $each: contactIds } 
+            } 
+          },
+          { new: true }
+        );
+        
+        console.log(`Added ${contactIds.length} contact IDs to campaign ${campaignId}`);
       }
     }
 

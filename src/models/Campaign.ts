@@ -25,6 +25,7 @@ export interface ICampaign extends Document {
   }>;
   nextEmailAccountToUse: number;
   nextContactToUse: number;
+  emailSent: number;
   isActive: boolean;
   schedule: {
     sendingHours: {
@@ -134,6 +135,10 @@ const CampaignSchema = new Schema<ICampaign>(
       default: 0,
     },
     nextContactToUse: {
+      type: Number,
+      default: 0,
+    },
+    emailSent: {
       type: Number,
       default: 0,
     },

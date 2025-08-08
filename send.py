@@ -44,37 +44,79 @@ def fetch_active_campaigns(db, limit=10):
 # Main processing function
 def process_campaigns(db):
     # Fetch and display active campaigns
-    print("\nFetching 10 latest active campaigns...")
+    # print("\nFetching 10 latest active campaigns...")
     campaigns = fetch_active_campaigns(db, 10)
     
     if campaigns:
         # print(f"\nFound {len(campaigns)} active campaigns:")
         for i, campaign in enumerate(campaigns, 1):
-            name = campaign.get('name', 'Unnamed Campaign')
+            campaignNname = campaign.get('name', 'Unnamed Campaign')
             userId = campaign.get('userId', 'Unknown User')
+            nextEmailAccountToUse = campaign.get('nextEmailAccountToUse', 0)
+            nextContactToUse = campaign.get('nextContactToUse', 0)
             emailAccountIds = campaign.get('emailAccountIds', 'Unknown Email Account')
+            contactIds = campaign.get('contactIds', 'Unknown Contacts')
 
-            print(f"Cmpaign Name: {name}")
 
-            #Get campaign>emailUsedIndex if not exists set it to 0
-            emailUsedIndex = campaign.get('emailUsedIndex', 0)
-            print('Email used index: ', emailUsedIndex)
-            
-            #Get campaign>emailAccountIds[emailUsedIndex]
-            emailAccountId = emailAccountIds[emailUsedIndex]
-            print('Email account ID: ', emailAccountId)
+            # print(f"Cmpaign Name: {campaignNname}")
+            # print(f"User ID: {userId}")
+            # print(f"Next Email Account To Use: {nextEmailAccountToUse}")
+            # print(f"Next Contact To Use: {nextContactToUse}")
+            # print(f"Email Account IDs: {emailAccountIds}")
+            # print(f"Contact IDs: {contactIds}")
+            # print(f"Sequences: {sequences}")
 
-            #Update te emailUsedIndex+1 or set it to 0 if it is greater than the length of emailAccountIds
-            emailUsedIndex = (emailUsedIndex + 1) % len(emailAccountIds)
-            print('Email used index updated: ', emailUsedIndex)
-            
-            
+            # Inbox and contact rotation
+            nextEmailAccountToUse = (nextEmailAccountToUse + 1) % len(emailAccountIds)
+            nextContactToUse = (nextContactToUse + 1) % len(contactIds)
 
-            time.sleep(1)
+            # Update campaign with new nextEmailAccountToUse and nextContactToUse
+            db.campaigns.update_one(
+                {"_id": campaign["_id"]},
+                {"$set": {"nextEmailAccountToUse": nextEmailAccountToUse, "nextContactToUse": nextContactToUse}}
+            )
+
+            # print(f"Next Email Account To Use: {nextEmailAccountToUse}")
+            # print(f"Next Contact To Use: {nextContactToUse}")
+            # print(f"Sequence Count: {sequenceCount}")
+
+            #Get the sending email account
+            sendingEmailAccountID = emailAccountIds[nextEmailAccountToUse]
+            sendingEmailAccount = db.emailaccounts.find_one({"_id": sendingEmailAccountID})
+            print(f"Sending Email Account: {sendingEmailAccount.get('email')}")
+
+            #Get the contact
+            contactID = contactIds[nextContactToUse]
+            contact = db.contacts.find_one({"_id": contactID})
+            print(f"Contact: {contact.get('email')}")
+
+
+            #Get the sequence
+            sequences = campaign.get('sequences')
+            sequenceCount = len(sequences)
+            contactCount = len(contactIds)
+            emailSent = campaign.get('emailSent', 0)
+
+            #deterine ne sequence to use
+
+
+
+            #Increase the emailSent count
+            db.campaigns.update_one(
+                {"_id": campaign["_id"]},
+                {"$set": {"emailSent": emailSent + 1}}
+            )
+
+            #print the emailSent count
+            print(f"Email Sent: {emailSent}")
+
+
+            time.sleep(10)
         
         print("Campaign processing cycle completed.")
         return True
     else:
+        time.sleep(10)
         print("No active campaigns found.")
         return True
 
@@ -98,9 +140,9 @@ if __name__ == "__main__":
     try:
         while True:
             cycle_count += 1
-            print(f"\n{'='*50}")
-            print(f"Starting processing cycle #{cycle_count}")
-            print(f"{'='*50}")
+            # print(f"\n{'='*50}")
+            # print(f"Starting processing cycle #{cycle_count}")
+            # print(f"{'='*50}")
             
             success = process_campaigns(db)
             

@@ -3,7 +3,7 @@ import { authenticateUser } from '@/lib/auth';
 import EmailAccount from '@/models/EmailAccount';
 import connectDB from '@/lib/mongodb';
 
-export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const user = await authenticateUser(req);
     if (!user) {
@@ -12,8 +12,10 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
 
     await connectDB();
     
+    const { id } = await params;
+    
     const emailAccount = await EmailAccount.findOneAndDelete({
-      _id: params.id,
+      _id: id,
       userId: user._id,
     });
 
@@ -28,7 +30,7 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
   }
 }
 
-export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const user = await authenticateUser(req);
     if (!user) {
@@ -36,7 +38,8 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     }
 
     const data = await req.json();
-    console.log('🔄 Updating email account:', params.id);
+    const { id } = await params;
+    console.log('🔄 Updating email account:', id);
     console.log('📊 Update data:', { ...data, smtpPassword: data.smtpPassword ? '[PROVIDED]' : '[NOT PROVIDED]' });
     
     await connectDB();
@@ -49,7 +52,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     }
     
     const emailAccount = await EmailAccount.findOneAndUpdate(
-      { _id: params.id, userId: user._id },
+      { _id: id, userId: user._id },
       { $set: updateData },
       { new: true }
     ).select('-smtpPassword');

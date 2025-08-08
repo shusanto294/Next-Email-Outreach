@@ -48,20 +48,12 @@ export async function GET(req: NextRequest) {
       .populate('emailAccountIds', 'email provider fromName replyToEmail')
       .sort({ createdAt: -1 });
 
-    // Get contact counts for each campaign
-    const campaignsWithContactCounts = await Promise.all(
-      campaigns.map(async (campaign) => {
-        const contactCount = await Contact.countDocuments({
-          campaignId: campaign._id,
-          userId: user._id
-        });
-
-        const campaignObj = campaign.toObject();
-        campaignObj.contactCount = contactCount;
-        
-        return campaignObj;
-      })
-    );
+    // Get contact counts for each campaign from contactIds array
+    const campaignsWithContactCounts = campaigns.map(campaign => {
+      const campaignObj = campaign.toObject();
+      campaignObj.contactCount = campaign.contactIds ? campaign.contactIds.length : 0;
+      return campaignObj;
+    });
 
     return NextResponse.json({ campaigns: campaignsWithContactCounts });
   } catch (error) {

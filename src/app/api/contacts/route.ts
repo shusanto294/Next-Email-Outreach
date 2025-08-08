@@ -24,8 +24,27 @@ export async function GET(req: NextRequest) {
     // Build query
     const query: any = { userId: user._id };
     
+    // If campaignId is provided, find contacts that are referenced by that campaign
     if (campaignId) {
-      query.campaignId = campaignId;
+      const campaign = await Campaign.findOne({
+        _id: campaignId,
+        userId: user._id
+      });
+      
+      if (!campaign) {
+        return NextResponse.json({ error: 'Campaign not found' }, { status: 404 });
+      }
+      
+      // Only return contacts that are in the campaign's contactIds array
+      if (campaign.contactIds && campaign.contactIds.length > 0) {
+        query._id = { $in: campaign.contactIds };
+      } else {
+        // No contacts in this campaign, return empty result
+        return NextResponse.json({
+          contacts: [],
+          pagination: { page, limit, total: 0, pages: 0 }
+        });
+      }
     }
     
     if (status) {
@@ -46,7 +65,6 @@ export async function GET(req: NextRequest) {
 
     // Get contacts with pagination
     const contacts = await Contact.find(query)
-      .populate('campaignId', 'name')
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(limit);
@@ -90,8 +108,9 @@ export async function POST(req: NextRequest) {
     await connectDB();
 
     // Check if campaign exists and belongs to user (if campaignId provided)
+    let campaign = null;
     if (campaignId) {
-      const campaign = await Campaign.findOne({
+      campaign = await Campaign.findOne({
         _id: campaignId,
         userId: user._id
       });
@@ -128,12 +147,21 @@ export async function POST(req: NextRequest) {
       notes: contactData.notes?.trim(),
     };
 
-    if (campaignId) {
-      contactPayload.campaignId = campaignId;
-    }
-
     const newContact = new Contact(contactPayload);
     await newContact.save();
+
+    // If campaignId provided, add this contact to the campaign's contactIds array
+    if (campaignId && campaign) {
+      await Campaign.findByIdAndUpdate(
+        campaignId,
+        { 
+          $addToSet: { 
+            contactIds: newContact._id 
+          } 
+        },
+        { new: true }
+      );
+    }
 
     return NextResponse.json({
       message: 'Contact created successfully',
