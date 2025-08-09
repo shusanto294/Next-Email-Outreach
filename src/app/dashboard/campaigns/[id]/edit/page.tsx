@@ -14,10 +14,34 @@ import DashboardHeader from '@/components/DashboardHeader';
 
 const sequenceSchema = z.object({
   stepNumber: z.number().min(1),
-  subject: z.string().min(1, 'Subject is required'),
-  content: z.string().min(1, 'Content is required'),
+  subject: z.string().optional(),
+  content: z.string().optional(),
   delayDays: z.coerce.number().min(0).default(0),
   isActive: z.boolean().default(true),
+  useAiForSubject: z.boolean().default(false),
+  aiSubjectPrompt: z.string().optional(),
+  useAiForContent: z.boolean().default(false),
+  aiContentPrompt: z.string().optional(),
+}).refine((data) => {
+  // Subject is required if not using AI for subject
+  if (!data.useAiForSubject && (!data.subject || data.subject.trim().length === 0)) {
+    return false;
+  }
+  // AI subject prompt is required if using AI for subject
+  if (data.useAiForSubject && (!data.aiSubjectPrompt || data.aiSubjectPrompt.trim().length === 0)) {
+    return false;
+  }
+  // Content is required if not using AI for content
+  if (!data.useAiForContent && (!data.content || data.content.trim().length === 0)) {
+    return false;
+  }
+  // AI content prompt is required if using AI for content
+  if (data.useAiForContent && (!data.aiContentPrompt || data.aiContentPrompt.trim().length === 0)) {
+    return false;
+  }
+  return true;
+}, {
+  message: "Please fill in required fields based on your AI/manual selection",
 });
 
 const campaignSchema = z.object({
@@ -94,6 +118,10 @@ interface Campaign {
     content: string;
     delayDays: number;
     isActive: boolean;
+    useAiForSubject?: boolean;
+    aiSubjectPrompt?: string;
+    useAiForContent?: boolean;
+    aiContentPrompt?: string;
   }>;
   contactCount: number;
   schedule: {
@@ -485,10 +513,29 @@ export default function EditCampaignPage() {
       return;
     }
 
-    // Check if any sequence has empty subject or content
-    const hasEmptySequence = data.sequences.some(seq => !seq.subject || !seq.content);
-    if (hasEmptySequence) {
-      setError('All email sequences must have both subject and content');
+    // Check if any sequence has missing required fields based on AI/manual mode
+    const hasInvalidSequence = data.sequences.some(seq => {
+      // Check subject requirements
+      if (!seq.useAiForSubject && (!seq.subject || seq.subject.trim().length === 0)) {
+        return true; // Missing manual subject
+      }
+      if (seq.useAiForSubject && (!seq.aiSubjectPrompt || seq.aiSubjectPrompt.trim().length === 0)) {
+        return true; // Missing AI subject prompt
+      }
+      
+      // Check content requirements
+      if (!seq.useAiForContent && (!seq.content || seq.content.trim().length === 0)) {
+        return true; // Missing manual content
+      }
+      if (seq.useAiForContent && (!seq.aiContentPrompt || seq.aiContentPrompt.trim().length === 0)) {
+        return true; // Missing AI content prompt
+      }
+      
+      return false;
+    });
+    
+    if (hasInvalidSequence) {
+      setError('Please fill in all required fields for each email sequence based on your AI/manual selection');
       return;
     }
 
@@ -541,6 +588,10 @@ export default function EditCampaignPage() {
       content: '',
       delayDays: fields.length === 0 ? 0 : 3,
       isActive: true,
+      useAiForSubject: false,
+      aiSubjectPrompt: '',
+      useAiForContent: false,
+      aiContentPrompt: '',
     });
   };
 
@@ -551,6 +602,7 @@ export default function EditCampaignPage() {
       setSelectedEmailAccounts([...selectedEmailAccounts, accountId]);
     }
   };
+
 
 
   if (isLoading) {
@@ -986,14 +1038,42 @@ export default function EditCampaignPage() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Subject Line *
-                    </label>
-                    <Input
-                      {...register(`sequences.${index}.subject`)}
-                      placeholder="Quick question about {{company}}"
-                      className="w-full"
-                    />
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="block text-sm font-medium text-gray-700">
+                        Subject Line *
+                      </label>
+                      <div className="flex items-center space-x-3">
+                        <span className="text-xs font-medium text-gray-600">
+                          Manual
+                        </span>
+                        <ToggleSwitch
+                          checked={watch(`sequences.${index}.useAiForSubject`) === true}
+                          onCheckedChange={(checked) => setValue(`sequences.${index}.useAiForSubject`, checked)}
+                          size="sm"
+                        />
+                        <span className="text-xs font-medium text-blue-600">
+                          AI
+                        </span>
+                      </div>
+                    </div>
+                    
+                    {watch(`sequences.${index}.useAiForSubject`) === true ? (
+                      <div className="space-y-2">
+                        <Input
+                          {...register(`sequences.${index}.aiSubjectPrompt`)}
+                          placeholder="Write a compelling subject line about..."
+                          className="w-full"
+                        />
+                        <p className="text-xs text-gray-500">AI will use this prompt to generate the subject line when sending emails</p>
+                      </div>
+                    ) : (
+                      <Input
+                        {...register(`sequences.${index}.subject`)}
+                        placeholder="Quick question about {{company}}"
+                        className="w-full"
+                      />
+                    )}
+                    
                     {errors.sequences?.[index]?.subject && (
                       <p className="text-red-500 text-sm mt-1">
                         {errors.sequences[index]?.subject?.message}
@@ -1002,14 +1082,41 @@ export default function EditCampaignPage() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Email Content *
-                    </label>
-                    <textarea
-                      {...register(`sequences.${index}.content`)}
-                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                      rows={6}
-                      placeholder={`Hi {{firstName}},
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="block text-sm font-medium text-gray-700">
+                        Email Content *
+                      </label>
+                      <div className="flex items-center space-x-3">
+                        <span className="text-xs font-medium text-gray-600">
+                          Manual
+                        </span>
+                        <ToggleSwitch
+                          checked={watch(`sequences.${index}.useAiForContent`) === true}
+                          onCheckedChange={(checked) => setValue(`sequences.${index}.useAiForContent`, checked)}
+                          size="sm"
+                        />
+                        <span className="text-xs font-medium text-blue-600">
+                          AI
+                        </span>
+                      </div>
+                    </div>
+                    
+                    {watch(`sequences.${index}.useAiForContent`) === true ? (
+                      <div className="space-y-2">
+                        <textarea
+                          {...register(`sequences.${index}.aiContentPrompt`)}
+                          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                          rows={4}
+                          placeholder="Write a personalized cold email that introduces our service and requests a meeting..."
+                        />
+                        <p className="text-xs text-gray-500">AI will use this prompt to generate the email content when sending emails</p>
+                      </div>
+                    ) : (
+                      <textarea
+                        {...register(`sequences.${index}.content`)}
+                        className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        rows={6}
+                        placeholder={`Hi {{firstName}},
 
 I noticed {{company}} is doing great work in the industry.
 
@@ -1019,7 +1126,9 @@ Would you be open to a quick 15-minute call this week?
 
 Best regards,
 {{fromName}}`}
-                    />
+                      />
+                    )}
+                    
                     {errors.sequences?.[index]?.content && (
                       <p className="text-red-500 text-sm mt-1">
                         {errors.sequences[index]?.content?.message}

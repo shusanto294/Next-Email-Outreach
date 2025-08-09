@@ -3,7 +3,7 @@ import pymongo
 import time
 import pytz
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 from bson import ObjectId
 
@@ -44,7 +44,15 @@ def is_within_schedule(campaign, user_timezone='UTC'):
         start_minutes = start_hour * 60 + start_minute
         end_minutes = end_hour * 60 + end_minute
         
-        if not (start_minutes <= current_minutes <= end_minutes):
+        # Handle overnight schedules (e.g., 23:00-11:00)
+        if start_minutes <= end_minutes:
+            # Normal schedule (e.g., 09:00-17:00)
+            within_hours = start_minutes <= current_minutes <= end_minutes
+        else:
+            # Overnight schedule (e.g., 23:00-11:00)
+            within_hours = current_minutes >= start_minutes or current_minutes <= end_minutes
+            
+        if not within_hours:
             return False, f"Current time ({current_time.strftime('%H:%M')}) is outside allowed hours ({sending_hours['start']}-{sending_hours['end']}) (timezone: {user_timezone})"
         
         return True, "Within allowed schedule"
@@ -57,7 +65,7 @@ def check_daily_limit(db, email_account_id):
     """Check if email account has reached its daily sending limit"""
     try:
         # Get today's date in UTC
-        today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
         tomorrow = today + timedelta(days=1)
         
         # Count emails sent today from this account
@@ -119,7 +127,7 @@ def check_sequence_delay(db, contact_id, campaign_id, sequence_step):
             return False, "Previous sequence email not found or not sent"
             
         # Calculate if enough time has passed
-        time_since_last = datetime.utcnow() - last_email['sentAt']
+        time_since_last = datetime.now(timezone.utc) - last_email['sentAt']
         required_delay = timedelta(days=delay_days)
         
         if time_since_last < required_delay:
@@ -152,7 +160,7 @@ def create_email_log(db, user_id, campaign_id, contact_id, email_account_id, seq
     """Create an email log entry for tracking"""
     try:
         message_id = str(uuid.uuid4())
-        current_time = datetime.utcnow()
+        current_time = datetime.now(timezone.utc)
         
         email_log = {
             "_id": ObjectId(),
@@ -388,13 +396,26 @@ def process_campaigns(db):
                     time.sleep(1)
                     continue
                 
-                # Get subject and content, then personalize them
-                subject = sequenceToUse.get('subject', 'No Subject')
-                content = sequenceToUse.get('content', 'No Content')
+                # Get subject and content based on AI mode or manual mode
+                if sequenceToUse.get('useAiForSubject', False):
+                    # Use AI prompt for subject
+                    ai_subject_prompt = sequenceToUse.get('aiSubjectPrompt', 'No AI Subject Prompt')
+                    personalized_subject = personalize_content(ai_subject_prompt, contact)
+                    print(f"Using AI Subject Prompt: {personalized_subject}")
+                else:
+                    # Use manual subject
+                    subject = sequenceToUse.get('subject', 'No Subject')
+                    personalized_subject = personalize_content(subject, contact)
                 
-                # Personalize content with contact data
-                personalized_subject = personalize_content(subject, contact)
-                personalized_content = personalize_content(content, contact)
+                if sequenceToUse.get('useAiForContent', False):
+                    # Use AI prompt for content
+                    ai_content_prompt = sequenceToUse.get('aiContentPrompt', 'No AI Content Prompt')
+                    personalized_content = personalize_content(ai_content_prompt, contact)
+                    print(f"Using AI Content Prompt: {personalized_content}")
+                else:
+                    # Use manual content
+                    content = sequenceToUse.get('content', 'No Content')
+                    personalized_content = personalize_content(content, contact)
                 
                 print(f"Processing: {to_email} (sequence {timesContacted + 1}/{len(sequences)})")
                 
@@ -414,7 +435,7 @@ def process_campaigns(db):
                 email_sent_successfully = simulate_send_email(from_email, to_email, personalized_subject, personalized_content)
                 
                 if email_sent_successfully:
-                    current_time = datetime.utcnow()
+                    current_time = datetime.now(timezone.utc)
                     
                     # Update the contact's data
                     db.contacts.update_one(
@@ -454,7 +475,7 @@ def process_campaigns(db):
                         {"_id": ObjectId(log_id)},
                         {"$set": {
                             "status": "failed",
-                            "failedAt": datetime.utcnow(),
+                            "failedAt": datetime.now(timezone.utc),
                             "errorMessage": "Simulation failed"
                         }}
                     )

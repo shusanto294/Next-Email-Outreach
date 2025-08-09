@@ -8,10 +8,34 @@ import connectDB from '@/lib/mongodb';
 
 const sequenceSchema = z.object({
   stepNumber: z.number().min(1),
-  subject: z.string().min(1, 'Subject is required'),
-  content: z.string().min(1, 'Content is required'),
+  subject: z.string().optional(),
+  content: z.string().optional(),
   delayDays: z.number().min(0).default(0),
   isActive: z.boolean().default(true),
+  useAiForSubject: z.boolean().default(false),
+  aiSubjectPrompt: z.string().optional(),
+  useAiForContent: z.boolean().default(false),
+  aiContentPrompt: z.string().optional(),
+}).refine((data) => {
+  // Subject is required if not using AI for subject
+  if (!data.useAiForSubject && (!data.subject || data.subject.trim().length === 0)) {
+    return false;
+  }
+  // AI subject prompt is required if using AI for subject
+  if (data.useAiForSubject && (!data.aiSubjectPrompt || data.aiSubjectPrompt.trim().length === 0)) {
+    return false;
+  }
+  // Content is required if not using AI for content
+  if (!data.useAiForContent && (!data.content || data.content.trim().length === 0)) {
+    return false;
+  }
+  // AI content prompt is required if using AI for content
+  if (data.useAiForContent && (!data.aiContentPrompt || data.aiContentPrompt.trim().length === 0)) {
+    return false;
+  }
+  return true;
+}, {
+  message: "Please fill in required fields based on your AI/manual selection",
 });
 
 const campaignSchema = z.object({

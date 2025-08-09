@@ -59,11 +59,11 @@ const EmailSequenceSchema = new Schema<IEmailSequence>({
   },
   subject: {
     type: String,
-    required: true,
+    required: false,
   },
   content: {
     type: String,
-    required: true,
+    required: false,
   },
   delayDays: {
     type: Number,
@@ -92,6 +92,25 @@ const EmailSequenceSchema = new Schema<IEmailSequence>({
   },
 });
 
+// Add custom validation to ensure either manual or AI fields are provided
+EmailSequenceSchema.pre('validate', function() {
+  // Subject validation
+  if (!this.useAiForSubject && (!this.subject || this.subject.trim().length === 0)) {
+    this.invalidate('subject', 'Subject is required when not using AI for subject');
+  }
+  if (this.useAiForSubject && (!this.aiSubjectPrompt || this.aiSubjectPrompt.trim().length === 0)) {
+    this.invalidate('aiSubjectPrompt', 'AI subject prompt is required when using AI for subject');
+  }
+  
+  // Content validation
+  if (!this.useAiForContent && (!this.content || this.content.trim().length === 0)) {
+    this.invalidate('content', 'Content is required when not using AI for content');
+  }
+  if (this.useAiForContent && (!this.aiContentPrompt || this.aiContentPrompt.trim().length === 0)) {
+    this.invalidate('aiContentPrompt', 'AI content prompt is required when using AI for content');
+  }
+});
+
 const CampaignSchema = new Schema<ICampaign>(
   {
     userId: {
@@ -111,7 +130,6 @@ const CampaignSchema = new Schema<ICampaign>(
     emailAccountIds: [{
       type: mongoose.Schema.Types.ObjectId,
       ref: 'EmailAccount',
-      required: true,
     }],
     sequences: [EmailSequenceSchema],
     contactIds: [{
