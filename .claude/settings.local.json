@@ -14,7 +14,10 @@
       "Bash(npm init:*)",
       "mcp__ide__getDiagnostics",
       "Bash(npx next build:*)",
-      "Bash(npm run dev:*)"
+      "Bash(npm run dev:*)",
+      "Bash(python:*)",
+      "Bash(pip install:*)",
+      "Bash(del test_send.py test_send_once.py reset_contact.py demo_send.py)"
     ],
     "deny": []
   }

@@ -22,6 +22,7 @@ export interface IContact extends Document {
   status: 'active' | 'unsubscribed' | 'bounced' | 'complained' | 'do-not-contact';
   lastContacted?: Date;
   timesContacted: number;
+  lastSent?: Date;
   emailStatus: 'never-sent' | 'sent' | 'delivered' | 'opened' | 'clicked' | 'replied' | 'bounced';
   source?: string;
   notes?: string;
@@ -135,6 +136,10 @@ const ContactSchema = new Schema<IContact>(
       type: Number,
       default: 0,
       min: 0,
+    },
+    lastSent: {
+      type: Date,
+      default: null,
     },
     emailStatus: {
       type: String,

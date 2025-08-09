@@ -39,6 +39,7 @@ interface Campaign {
   trackOpens: boolean;
   trackClicks: boolean;
   unsubscribeLink: boolean;
+  emailSent: number;
   stats: {
     sent: number;
     delivered: number;
@@ -314,12 +315,12 @@ export default function CampaignsPage() {
                     </div>
                     <div className="bg-gray-50 p-3 rounded">
                       <div className="text-sm text-gray-600">Sent</div>
-                      <div className="text-lg font-medium">{campaign.stats.sent}</div>
+                      <div className="text-lg font-medium">{campaign.emailSent}</div>
                     </div>
                     <div className="bg-gray-50 p-3 rounded">
                       <div className="text-sm text-gray-600">Open Rate</div>
                       <div className="text-lg font-medium">
-                        {calculateOpenRate(campaign.stats.opened, campaign.stats.sent)}%
+                        {calculateOpenRate(campaign.stats.opened, campaign.emailSent)}%
                       </div>
                     </div>
                   </div>
@@ -339,7 +340,7 @@ export default function CampaignsPage() {
                     </div>
                   </div>
 
-                  {campaign.stats.sent > 0 && (
+                  {campaign.emailSent > 0 && (
                     <div className="mt-4 pt-4 border-t">
                       <div className="flex items-center justify-between text-sm">
                         <div className="flex space-x-6">
