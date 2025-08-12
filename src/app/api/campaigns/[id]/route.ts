@@ -40,7 +40,6 @@ const sequenceSchema = z.object({
 
 const updateCampaignSchema = z.object({
   name: z.string().min(1, 'Campaign name is required').optional(),
-  description: z.string().optional(),
   emailAccountIds: z.array(z.string()).optional(),
   sequences: z.array(sequenceSchema).min(1, 'At least one email sequence is required').optional(),
   contactIds: z.array(z.string()).optional(),
@@ -99,49 +98,28 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     }
 
     const data = await req.json();
-    console.log('🔄 API: Updating campaign with data:');
-    console.log('- Data keys:', Object.keys(data));
-    console.log('- Email Account IDs:', data.emailAccountIds);
-    console.log('- Is Active:', data.isActive);
-    console.log('- Schedule:', data.schedule);
     
     // Validate data
     const validatedData = updateCampaignSchema.parse(data);
-    console.log('✅ Data validation passed');
     
     await connectDB();
     
     const { id } = await params;
-    console.log('📋 Campaign ID:', id);
-    console.log('👤 User ID:', user._id);
     
-    // First get the current campaign to see what's being updated
-    const currentCampaign = await Campaign.findOne({ _id: id, userId: user._id });
-    if (!currentCampaign) {
-      console.error('❌ Campaign not found for user');
-      return NextResponse.json({ error: 'Campaign not found' }, { status: 404 });
-    }
-
     // Verify email accounts if provided
     if (validatedData.emailAccountIds && validatedData.emailAccountIds.length > 0) {
-      console.log('Looking for email accounts:', validatedData.emailAccountIds);
       const emailAccounts = await EmailAccount.find({
         _id: { $in: validatedData.emailAccountIds },
         userId: user._id,
       });
-      console.log('Email accounts found:', emailAccounts.length);
 
       if (emailAccounts.length !== validatedData.emailAccountIds.length) {
-        console.log('Some email accounts not found or do not belong to user');
         return NextResponse.json(
           { error: 'Some email accounts not found or do not belong to user' },
           { status: 400 }
         );
       }
     }
-    
-    console.log('📊 Current campaign contactIds:', currentCampaign?.contactIds?.length || 0);
-    console.log('📊 Validated data to update with:', JSON.stringify(validatedData, null, 2));
     
     // Use findOneAndUpdate with validation
     const campaign = await Campaign.findOneAndUpdate(
@@ -152,14 +130,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
      .populate('contactIds', 'email firstName lastName company');
 
     if (!campaign) {
-      console.error('❌ Campaign update failed - not found after update');
       return NextResponse.json({ error: 'Campaign not found' }, { status: 404 });
     }
 
-    console.log('✅ API: Campaign updated successfully');
-    console.log('- Updated campaign emailAccountIds:', campaign.emailAccountIds?.length || 0);
-    console.log('- Updated campaign isActive:', campaign.isActive);
-    console.log('- Updated campaign schedule:', campaign.schedule);
 
     return NextResponse.json({
       message: 'Campaign updated successfully',

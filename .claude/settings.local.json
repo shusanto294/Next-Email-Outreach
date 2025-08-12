@@ -17,7 +17,8 @@
       "Bash(npm run dev:*)",
       "Bash(python:*)",
       "Bash(pip install:*)",
-      "Bash(del test_send.py test_send_once.py reset_contact.py demo_send.py)"
+      "Bash(del test_send.py test_send_once.py reset_contact.py demo_send.py)",
+      "Bash(del \"C:\\Users\\shusa\\OneDrive\\Desktop\\Next Email Outreach\\cold-email-platform\\worker\\test_db_connection.py\")"
     ],
     "deny": []
   }

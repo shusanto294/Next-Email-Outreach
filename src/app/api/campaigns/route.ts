@@ -40,7 +40,6 @@ const sequenceSchema = z.object({
 
 const campaignSchema = z.object({
   name: z.string().min(1, 'Campaign name is required'),
-  description: z.string().optional(),
   emailAccountIds: z.array(z.string()).optional(),
   sequences: z.array(sequenceSchema).min(1, 'At least one email sequence is required'),
   contactIds: z.array(z.string()).default([]),

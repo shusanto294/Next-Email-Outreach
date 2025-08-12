@@ -15,7 +15,6 @@ export interface IEmailSequence {
 export interface ICampaign extends Document {
   userId: mongoose.Types.ObjectId;
   name: string;
-  description?: string;
   emailAccountIds: mongoose.Types.ObjectId[];
   sequences: IEmailSequence[];
   contactIds: mongoose.Types.ObjectId[];
@@ -121,10 +120,6 @@ const CampaignSchema = new Schema<ICampaign>(
     name: {
       type: String,
       required: true,
-      trim: true,
-    },
-    description: {
-      type: String,
       trim: true,
     },
     emailAccountIds: [{

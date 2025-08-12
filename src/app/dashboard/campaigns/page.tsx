@@ -10,7 +10,6 @@ import DashboardHeader from '@/components/DashboardHeader';
 interface Campaign {
   _id: string;
   name: string;
-  description?: string;
   isActive: boolean;
   emailAccountIds: Array<{
     _id: string;
@@ -167,6 +166,7 @@ export default function CampaignsPage() {
           }],
           contactCount: 0,
           isActive: false,
+          emailAccountIds: [],
           schedule: {
             timezone: 'Asia/Dhaka',
             sendingHours: {
@@ -264,9 +264,6 @@ export default function CampaignsPage() {
                       <h3 className="text-xl font-semibold text-gray-900 mb-1">
                         {campaign.name}
                       </h3>
-                      {campaign.description && (
-                        <p className="text-gray-600 text-sm">{campaign.description}</p>
-                      )}
                     </div>
                     <div className="flex items-center space-x-2">
                       <span className={`px-2 py-1 rounded-full text-xs font-medium ${campaign.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>

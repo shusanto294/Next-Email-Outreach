@@ -46,9 +46,9 @@ const sequenceSchema = z.object({
 
 const campaignSchema = z.object({
   name: z.string().min(1, 'Campaign name is required'),
-  description: z.string().optional(),
   sequences: z.array(sequenceSchema).min(1, 'At least one email sequence is required'),
   isActive: z.boolean().default(true),
+  emailAccountIds: z.array(z.string()).default([]),
   schedule: z.object({
     sendingHours: z.object({
       start: z.string().default('09:00'),
@@ -103,7 +103,6 @@ interface Contact {
 interface Campaign {
   _id: string;
   name: string;
-  description?: string;
   isActive: boolean;
   emailAccountIds: Array<{
     _id: string;
@@ -152,6 +151,30 @@ export default function EditCampaignPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [campaignContacts, setCampaignContacts] = useState<Contact[]>([]);
+  const [contactsLoading, setContactsLoading] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalContacts, setTotalContacts] = useState(0);
+  const [activeTab, setActiveTab] = useState<'details' | 'contacts' | 'sequences' | 'schedule'>('details');
+  
+  const CONTACTS_PER_PAGE = 10;
+  
+  const tabOrder: ('details' | 'contacts' | 'sequences' | 'schedule')[] = ['details', 'contacts', 'sequences', 'schedule'];
+  const currentTabIndex = tabOrder.indexOf(activeTab);
+  const isFirstTab = currentTabIndex === 0;
+  const isLastTab = currentTabIndex === tabOrder.length - 1;
+
+  const goToNextTab = () => {
+    if (!isLastTab) {
+      setActiveTab(tabOrder[currentTabIndex + 1]);
+    }
+  };
+
+  const goToPreviousTab = () => {
+    if (!isFirstTab) {
+      setActiveTab(tabOrder[currentTabIndex - 1]);
+    }
+  };
   const router = useRouter();
   const params = useParams();
   const campaignId = params.id as string;
@@ -178,6 +201,13 @@ export default function EditCampaignPage() {
   useEffect(() => {
     fetchData();
   }, [campaignId]);
+
+  // Fetch contacts when switching to contacts tab or when campaign is loaded
+  useEffect(() => {
+    if (activeTab === 'contacts' && campaign) {
+      fetchCampaignContacts(1);
+    }
+  }, [activeTab, campaign]);
 
   const fetchData = async () => {
     const token = localStorage.getItem('token');
@@ -224,9 +254,9 @@ export default function EditCampaignPage() {
       // Reset form with campaign data
       reset({
         name: campaign.name,
-        description: campaign.description || '',
         sequences: campaign.sequences,
         isActive: campaign.isActive,
+        emailAccountIds: campaign.emailAccountIds.map(acc => acc._id),
         schedule: campaign.schedule,
         trackOpens: campaign.trackOpens,
         trackClicks: campaign.trackClicks,
@@ -237,6 +267,53 @@ export default function EditCampaignPage() {
       setError('Failed to load data');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const refreshCampaignData = async () => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+
+    try {
+      const campaignRes = await fetch(`/api/campaigns/${campaignId}`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+
+      if (campaignRes.ok) {
+        const campaignData = await campaignRes.json();
+        const campaign = campaignData.campaign;
+        setCampaign(campaign);
+        // Don't reset form or selectedEmailAccounts - just update campaign data
+      }
+    } catch (error) {
+      console.error('Error refreshing campaign data:', error);
+    }
+  };
+
+  const fetchCampaignContacts = async (page: number = 1) => {
+    if (!campaign) return;
+    
+    setContactsLoading(true);
+    const token = localStorage.getItem('token');
+    
+    try {
+      const response = await fetch(
+        `/api/contacts?campaignId=${campaignId}&page=${page}&limit=${CONTACTS_PER_PAGE}`,
+        {
+          headers: { 'Authorization': `Bearer ${token}` },
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        setCampaignContacts(data.contacts || []);
+        setTotalContacts(data.pagination?.total || 0);
+        setCurrentPage(page);
+      }
+    } catch (error) {
+      console.error('Error fetching campaign contacts:', error);
+    } finally {
+      setContactsLoading(false);
     }
   };
 
@@ -359,6 +436,8 @@ export default function EditCampaignPage() {
       }
       
       setShowUploadForm(true);
+      // Switch to contacts tab when CSV is uploaded
+      setActiveTab('contacts');
     };
     
     reader.readAsText(file);
@@ -472,8 +551,12 @@ export default function EditCampaignPage() {
       setColumnMapping({});
       setDetectedColumns([]);
       
-      // Refresh campaign data to update contact count
-      await fetchData();
+      // Refresh campaign data to update contact count (without resetting form)
+      await refreshCampaignData();
+      // Refresh contact list if on contacts tab
+      if (activeTab === 'contacts') {
+        await fetchCampaignContacts(currentPage);
+      }
     } catch (error: any) {
       setError(error.message);
     } finally {
@@ -490,11 +573,6 @@ export default function EditCampaignPage() {
   };
 
   const onSubmit = async (data: CampaignForm) => {
-    console.log('=== UPDATING CAMPAIGN ===');
-    console.log('Form data:', data);
-    console.log('Selected email accounts:', selectedEmailAccounts);
-    console.log('Uploaded contacts:', uploadedContacts);
-    console.log('Form errors:', errors);
 
     // Clear any previous errors
     setError('');
@@ -505,38 +583,39 @@ export default function EditCampaignPage() {
     //   return;
     // }
 
-    // Contacts are optional - campaigns can be updated without contacts
+    // Only validate sequences if we're on the sequences tab or final submission
+    if (activeTab === 'sequences' || isLastTab) {
+      // Validate sequences
+      if (!data.sequences || data.sequences.length === 0) {
+        setError('Please add at least one email sequence');
+        return;
+      }
 
-    // Validate sequences
-    if (!data.sequences || data.sequences.length === 0) {
-      setError('Please add at least one email sequence');
-      return;
-    }
-
-    // Check if any sequence has missing required fields based on AI/manual mode
-    const hasInvalidSequence = data.sequences.some(seq => {
-      // Check subject requirements
-      if (!seq.useAiForSubject && (!seq.subject || seq.subject.trim().length === 0)) {
-        return true; // Missing manual subject
-      }
-      if (seq.useAiForSubject && (!seq.aiSubjectPrompt || seq.aiSubjectPrompt.trim().length === 0)) {
-        return true; // Missing AI subject prompt
-      }
+      // Check if any sequence has missing required fields based on AI/manual mode
+      const hasInvalidSequence = data.sequences.some(seq => {
+        // Check subject requirements
+        if (!seq.useAiForSubject && (!seq.subject || seq.subject.trim().length === 0)) {
+          return true; // Missing manual subject
+        }
+        if (seq.useAiForSubject && (!seq.aiSubjectPrompt || seq.aiSubjectPrompt.trim().length === 0)) {
+          return true; // Missing AI subject prompt
+        }
+        
+        // Check content requirements
+        if (!seq.useAiForContent && (!seq.content || seq.content.trim().length === 0)) {
+          return true; // Missing manual content
+        }
+        if (seq.useAiForContent && (!seq.aiContentPrompt || seq.aiContentPrompt.trim().length === 0)) {
+          return true; // Missing AI content prompt
+        }
+        
+        return false;
+      });
       
-      // Check content requirements
-      if (!seq.useAiForContent && (!seq.content || seq.content.trim().length === 0)) {
-        return true; // Missing manual content
+      if (hasInvalidSequence) {
+        setError('Please fill in all required fields for each email sequence based on your AI/manual selection');
+        return;
       }
-      if (seq.useAiForContent && (!seq.aiContentPrompt || seq.aiContentPrompt.trim().length === 0)) {
-        return true; // Missing AI content prompt
-      }
-      
-      return false;
-    });
-    
-    if (hasInvalidSequence) {
-      setError('Please fill in all required fields for each email sequence based on your AI/manual selection');
-      return;
     }
 
     setIsSubmitting(true);
@@ -546,12 +625,11 @@ export default function EditCampaignPage() {
 
     try {
       // Update the existing campaign with all selected email accounts
-      console.log('📝 Updating existing campaign with multiple email accounts...');
       const updatePayload = {
         ...data,
-        emailAccountIds: selectedEmailAccounts.length > 0 ? selectedEmailAccounts : [],
+        // emailAccountIds should already be in data now, but keep as fallback
+        emailAccountIds: data.emailAccountIds || selectedEmailAccounts || [],
       };
-      console.log('Update payload:', updatePayload);
 
       const updateResponse = await fetch(`/api/campaigns/${campaignId}`, {
         method: 'PUT',
@@ -563,17 +641,19 @@ export default function EditCampaignPage() {
       });
 
       const updateResult = await updateResponse.json();
-      console.log('Update response:', updateResponse.status, updateResult);
 
       if (!updateResponse.ok) {
-        console.error('Failed to update existing campaign:', updateResult);
         throw new Error(updateResult.error || 'Failed to update campaign');
       }
 
-      console.log('✅ Campaign updated successfully with multiple email accounts!');
-      router.push('/dashboard/campaigns');
+      // If this is the last tab, redirect to campaigns list
+      // Otherwise, go to the next tab
+      if (isLastTab) {
+        router.push('/dashboard/campaigns');
+      } else {
+        goToNextTab();
+      }
     } catch (err: unknown) {
-      console.error('❌ Campaign update error:', err);
       const error = err as Error;
       setError(error.message || 'An error occurred while updating the campaign');
     } finally {
@@ -596,11 +676,16 @@ export default function EditCampaignPage() {
   };
 
   const toggleEmailAccountSelection = (accountId: string) => {
+    let newSelectedAccounts;
     if (selectedEmailAccounts.includes(accountId)) {
-      setSelectedEmailAccounts(selectedEmailAccounts.filter(id => id !== accountId));
+      newSelectedAccounts = selectedEmailAccounts.filter(id => id !== accountId);
     } else {
-      setSelectedEmailAccounts([...selectedEmailAccounts, accountId]);
+      newSelectedAccounts = [...selectedEmailAccounts, accountId];
     }
+    
+    setSelectedEmailAccounts(newSelectedAccounts);
+    // Also update the form data to keep it in sync
+    setValue('emailAccountIds', newSelectedAccounts);
   };
 
 
@@ -630,22 +715,21 @@ export default function EditCampaignPage() {
     <div className="min-h-screen bg-gray-50">
       <DashboardHeader />
 
-      <div className="max-w-4xl mx-auto px-6 py-8">
-        <div className="flex items-center mb-6">
-          <Button
-            variant="outline"
-            onClick={() => router.push('/dashboard/campaigns')}
-            className="mr-4"
-          >
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Back to Campaigns
-          </Button>
+      <div className="max-w-7xl mx-auto px-6 py-8">
+        <div className="flex justify-between items-center mb-6">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Edit Campaign</h1>
             <p className="text-gray-600 mt-2">
               Update your campaign settings and email sequences
             </p>
           </div>
+          <Button
+            variant="outline"
+            onClick={() => router.push('/dashboard/campaigns')}
+          >
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Back to Campaigns
+          </Button>
         </div>
 
         {error && (
@@ -654,9 +738,54 @@ export default function EditCampaignPage() {
           </div>
         )}
 
+        {/* Tab Navigation with Progress */}
+        <div className="border-b border-gray-200 mb-8">
+          <div className="flex items-center justify-between mb-4">
+            <div className="text-sm text-gray-500">
+              Step {currentTabIndex + 1} of {tabOrder.length}
+            </div>
+            <div className="flex space-x-2">
+              {tabOrder.map((_, index) => (
+                <div
+                  key={index}
+                  className={`w-2 h-2 rounded-full ${
+                    index <= currentTabIndex ? 'bg-blue-500' : 'bg-gray-300'
+                  }`}
+                />
+              ))}
+            </div>
+          </div>
+          <nav className="flex space-x-8">
+            {[
+              { key: 'details', label: 'Campaign Details' },
+              { key: 'contacts', label: 'Contacts', badge: campaign?.contactCount },
+              { key: 'sequences', label: 'Email Sequences', badge: campaign?.sequences?.length },
+              { key: 'schedule', label: 'Schedule Settings' },
+            ].map((tab) => (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setActiveTab(tab.key as any)}
+                className={`py-2 px-1 border-b-2 font-medium text-sm flex items-center space-x-2 ${
+                  activeTab === tab.key
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                <span>{tab.label}</span>
+                {tab.badge !== undefined && tab.badge > 0 && (
+                  <span className="bg-blue-100 text-blue-800 text-xs font-medium px-2 py-1 rounded-full">
+                    {tab.badge}
+                  </span>
+                )}
+              </button>
+            ))}
+          </nav>
+        </div>
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-8">
-          {/* Campaign Details */}
+          {/* Campaign Details Tab */}
+          {activeTab === 'details' && (
           <Card>
             <CardHeader>
               <CardTitle>Campaign Details</CardTitle>
@@ -705,17 +834,6 @@ export default function EditCampaignPage() {
                 </div>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Description
-                </label>
-                <textarea
-                  {...register('description')}
-                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  rows={3}
-                  placeholder="Campaign description..."
-                />
-              </div>
 
               {/* Email Account Selection */}
               <div>
@@ -734,7 +852,7 @@ export default function EditCampaignPage() {
                     </Button>
                   </div>
                 ) : (
-                  <div className="space-y-2 max-h-50 overflow-y-auto border rounded-lg p-3">
+                  <div className="space-y-2 border rounded-lg p-3">
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-sm text-gray-600">
                         {selectedEmailAccounts.length} of {emailAccounts.length} accounts selected
@@ -744,7 +862,11 @@ export default function EditCampaignPage() {
                           type="button"
                           variant="outline"
                           size="sm"
-                          onClick={() => setSelectedEmailAccounts(emailAccounts.map(acc => acc._id))}
+                          onClick={() => {
+                            const allAccountIds = emailAccounts.map(acc => acc._id);
+                            setSelectedEmailAccounts(allAccountIds);
+                            setValue('emailAccountIds', allAccountIds);
+                          }}
                         >
                           Select All
                         </Button>
@@ -752,7 +874,10 @@ export default function EditCampaignPage() {
                           type="button"
                           variant="outline"
                           size="sm"
-                          onClick={() => setSelectedEmailAccounts([])}
+                          onClick={() => {
+                            setSelectedEmailAccounts([]);
+                            setValue('emailAccountIds', []);
+                          }}
                         >
                           Deselect All
                         </Button>
@@ -793,6 +918,20 @@ export default function EditCampaignPage() {
                 )}
               </div>
 
+            </CardContent>
+          </Card>
+          )}
+
+          {/* Contacts Tab */}
+          {activeTab === 'contacts' && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Campaign Contacts</CardTitle>
+              <CardDescription>
+                Manage and upload contacts for your campaign
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
               {/* CSV Upload Section */}
               <div>
                 <div className="flex items-center justify-between mb-2">
@@ -855,12 +994,10 @@ export default function EditCampaignPage() {
                   </div>
                 )}
               </div>
-            </CardContent>
-          </Card>
 
-          {/* Upload CSV Form */}
-          {showUploadForm && (
-            <Card>
+              {/* Upload CSV Form */}
+              {showUploadForm && (
+                <Card>
               <CardHeader>
                 <CardTitle>Import Contacts from CSV</CardTitle>
                 <CardDescription>
@@ -984,22 +1121,181 @@ export default function EditCampaignPage() {
                     </Button>
                   </div>
                 </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+              )}
+
+              {/* CSV Import Status Message */}
+              {message && (
+                <div className={`p-4 rounded-md ${
+                  message.includes('success') || message.includes('Successfully') || message.includes('imported') || message.includes('CSV Import Complete')
+                    ? 'bg-green-50 text-green-700 border border-green-200' 
+                    : 'bg-red-50 text-red-700 border border-red-200'
+                }`}>
+                  <pre className="whitespace-pre-wrap font-sans text-sm">{message}</pre>
+                </div>
+              )}
+
+              {/* Campaign Contacts List */}
+              <div className="mt-8">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-medium text-gray-900">Campaign Contacts</h3>
+                  <div className="text-sm text-gray-500">
+                    {totalContacts} contact{totalContacts !== 1 ? 's' : ''} total
+                  </div>
+                </div>
+
+                {contactsLoading ? (
+                  <div className="text-center py-8">
+                    <div className="text-gray-500">Loading contacts...</div>
+                  </div>
+                ) : campaignContacts.length === 0 ? (
+                  <div className="text-center py-8">
+                    <div className="text-gray-500">No contacts found for this campaign.</div>
+                    <p className="text-sm text-gray-400 mt-1">Upload a CSV file to add contacts.</p>
+                  </div>
+                ) : (
+                  <>
+                    {/* Contacts Table */}
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Contact
+                            </th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Company
+                            </th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Position
+                            </th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Status
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                          {campaignContacts.map((contact) => (
+                            <tr key={contact._id}>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <div>
+                                  <div className="text-sm font-medium text-gray-900">
+                                    {contact.firstName || contact.lastName 
+                                      ? `${contact.firstName || ''} ${contact.lastName || ''}`.trim()
+                                      : 'N/A'}
+                                  </div>
+                                  <div className="text-sm text-gray-500">{contact.email}</div>
+                                </div>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {contact.company || 'N/A'}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {contact.position || 'N/A'}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                                  contact.status === 'active' 
+                                    ? 'bg-green-100 text-green-800'
+                                    : contact.status === 'unsubscribed'
+                                    ? 'bg-red-100 text-red-800'
+                                    : contact.status === 'bounced'
+                                    ? 'bg-yellow-100 text-yellow-800'
+                                    : 'bg-gray-100 text-gray-800'
+                                }`}>
+                                  {contact.status}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Pagination Controls */}
+                    <div className="flex items-center justify-between mt-6 pt-4 border-t border-gray-200">
+                      <div className="text-sm text-gray-700">
+                        Showing {((currentPage - 1) * CONTACTS_PER_PAGE) + 1} to {Math.min(currentPage * CONTACTS_PER_PAGE, totalContacts)} of {totalContacts} contacts
+                      </div>
+                      
+                      {Math.ceil(totalContacts / CONTACTS_PER_PAGE) > 1 && (
+                        <div className="flex items-center space-x-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => fetchCampaignContacts(currentPage - 1)}
+                            disabled={currentPage === 1 || contactsLoading}
+                          >
+                            Previous
+                          </Button>
+                          
+                          <div className="flex items-center space-x-1">
+                            {(() => {
+                              const totalPages = Math.ceil(totalContacts / CONTACTS_PER_PAGE);
+                              const pages = [];
+                              
+                              if (totalPages <= 6) {
+                                // Show all pages if 6 or fewer
+                                for (let i = 1; i <= totalPages; i++) {
+                                  pages.push(i);
+                                }
+                              } else {
+                                // Show first page, current page ±1, and last page with ellipsis
+                                if (currentPage <= 3) {
+                                  pages.push(1, 2, 3, 4);
+                                  if (totalPages > 4) pages.push('...');
+                                  if (totalPages > 5) pages.push(totalPages);
+                                } else if (currentPage >= totalPages - 2) {
+                                  pages.push(1);
+                                  if (totalPages > 4) pages.push('...');
+                                  for (let i = totalPages - 3; i <= totalPages; i++) {
+                                    pages.push(i);
+                                  }
+                                } else {
+                                  pages.push(1, '...', currentPage - 1, currentPage, currentPage + 1, '...', totalPages);
+                                }
+                              }
+                              
+                              return pages.map((page, index) => 
+                                page === '...' ? (
+                                  <span key={`ellipsis-${index}`} className="text-gray-400 px-2">...</span>
+                                ) : (
+                                  <Button
+                                    key={`page-${page}`}
+                                    variant={currentPage === page ? "default" : "outline"}
+                                    size="sm"
+                                    onClick={() => fetchCampaignContacts(page as number)}
+                                    disabled={contactsLoading}
+                                    className="w-8 h-8 p-0"
+                                  >
+                                    {page}
+                                  </Button>
+                                )
+                              );
+                            })()}
+                          </div>
+                          
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => fetchCampaignContacts(currentPage + 1)}
+                            disabled={currentPage >= Math.ceil(totalContacts / CONTACTS_PER_PAGE) || contactsLoading}
+                          >
+                            Next
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            </CardContent>
+          </Card>
           )}
 
-          {/* CSV Import Status Message */}
-          {message && (
-            <div className={`p-4 rounded-md ${
-              message.includes('success') || message.includes('Successfully') || message.includes('imported') || message.includes('CSV Import Complete')
-                ? 'bg-green-50 text-green-700 border border-green-200' 
-                : 'bg-red-50 text-red-700 border border-red-200'
-            }`}>
-              <pre className="whitespace-pre-wrap font-sans text-sm">{message}</pre>
-            </div>
-          )}
-
-          {/* Email Sequences */}
+          {/* Email Sequences Tab */}
+          {activeTab === 'sequences' && (
           <Card>
             <CardHeader>
               <CardTitle>Email Sequences</CardTitle>
@@ -1059,10 +1355,11 @@ export default function EditCampaignPage() {
                     
                     {watch(`sequences.${index}.useAiForSubject`) === true ? (
                       <div className="space-y-2">
-                        <Input
+                        <textarea
                           {...register(`sequences.${index}.aiSubjectPrompt`)}
                           placeholder="Write a compelling subject line about..."
-                          className="w-full"
+                          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                          rows={3}
                         />
                         <p className="text-xs text-gray-500">AI will use this prompt to generate the subject line when sending emails</p>
                       </div>
@@ -1160,10 +1457,10 @@ Best regards,
               </Button>
             </CardContent>
           </Card>
+          )}
 
-
-
-          {/* Schedule Settings */}
+          {/* Schedule Settings Tab */}
+          {activeTab === 'schedule' && (
           <Card>
             <CardHeader>
               <CardTitle>Schedule Settings</CardTitle>
@@ -1271,27 +1568,54 @@ Best regards,
               </div>
             </CardContent>
           </Card>
+          )}
 
-          {/* Submit Button */}
-          <div className="flex justify-end space-x-4">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => router.push('/dashboard/campaigns')}
-              disabled={isSubmitting}
-            >
-              Cancel
-            </Button>
-            <Button 
-              type="submit" 
-              disabled={
-                isSubmitting ||
-                Object.keys(errors).length > 0
-              }
-            >
-              <Save className="w-4 h-4 mr-2" />
-              {isSubmitting ? 'Updating Campaign...' : 'Update Campaign'}
-            </Button>
+          {/* Navigation Buttons */}
+          <div className="flex justify-between items-center">
+            <div className="flex space-x-4">
+              {!isFirstTab && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={goToPreviousTab}
+                  disabled={isSubmitting}
+                >
+                  <ArrowLeft className="w-4 h-4 mr-2" />
+                  Previous
+                </Button>
+              )}
+            </div>
+
+            <div className="flex space-x-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => router.push('/dashboard/campaigns')}
+                disabled={isSubmitting}
+              >
+                Cancel
+              </Button>
+              
+              <Button 
+                type="submit" 
+                disabled={
+                  isSubmitting ||
+                  Object.keys(errors).length > 0
+                }
+              >
+                {isLastTab ? (
+                  <>
+                    <Save className="w-4 h-4 mr-2" />
+                    {isSubmitting ? 'Saving Campaign...' : 'Save & Complete'}
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-4 h-4 mr-2" />
+                    {isSubmitting ? 'Saving...' : 'Save & Continue'}
+                  </>
+                )}
+              </Button>
+            </div>
           </div>
           
           {/* Form Validation Status - Removed list requirement */}

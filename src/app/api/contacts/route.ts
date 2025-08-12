@@ -143,7 +143,6 @@ export async function POST(req: NextRequest) {
       linkedin: contactData.linkedin?.trim(),
       companyLinkedin: contactData.companyLinkedin?.trim(),
       personalization: contactData.personalization?.trim(),
-      source: contactData.source?.trim() || 'Manual Entry',
       notes: contactData.notes?.trim(),
     };
 

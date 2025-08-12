@@ -19,12 +19,10 @@ export interface IContact extends Document {
   employees?: string;
   websiteContent?: string;
   personalization?: string;
+  schedule: Date;
   status: 'active' | 'unsubscribed' | 'bounced' | 'complained' | 'do-not-contact';
   lastContacted?: Date;
-  timesContacted: number;
-  lastSent?: Date;
-  emailStatus: 'never-sent' | 'sent' | 'delivered' | 'opened' | 'clicked' | 'replied' | 'bounced';
-  source?: string;
+  sent: number;
   notes?: string;
   createdAt: Date;
   updatedAt: Date;
@@ -124,6 +122,10 @@ const ContactSchema = new Schema<IContact>(
       trim: true,
       maxlength: 2000,
     },
+    schedule: {
+      type: Date,
+      default: Date.now,
+    },
     status: {
       type: String,
       enum: ['active', 'unsubscribed', 'bounced', 'complained', 'do-not-contact'],
@@ -132,24 +134,10 @@ const ContactSchema = new Schema<IContact>(
     lastContacted: {
       type: Date,
     },
-    timesContacted: {
+    sent: {
       type: Number,
       default: 0,
       min: 0,
-    },
-    lastSent: {
-      type: Date,
-      default: null,
-    },
-    emailStatus: {
-      type: String,
-      enum: ['never-sent', 'sent', 'delivered', 'opened', 'clicked', 'replied', 'bounced'],
-      default: 'never-sent',
-    },
-    source: {
-      type: String,
-      trim: true,
-      maxlength: 100,
     },
     notes: {
       type: String,
@@ -166,7 +154,6 @@ const ContactSchema = new Schema<IContact>(
 ContactSchema.index({ userId: 1, email: 1 }, { unique: true });
 ContactSchema.index({ email: 1 });
 ContactSchema.index({ status: 1 });
-ContactSchema.index({ emailStatus: 1 });
 
 // Force remove the cached model to ensure schema updates are applied
 if (mongoose.models.Contact) {

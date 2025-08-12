@@ -26,6 +26,12 @@ export default function DashboardHeader() {
             <Button variant="outline" onClick={() => router.push('/dashboard/contacts')}>
               Contacts
             </Button>
+            <Button variant="outline" onClick={() => router.push('/dashboard/sent-emails')}>
+              Sent Emails
+            </Button>
+            <Button variant="outline" onClick={() => router.push('/dashboard/personalization-logs')}>
+              AI Logs
+            </Button>
           </div>
         </div>
       </div>

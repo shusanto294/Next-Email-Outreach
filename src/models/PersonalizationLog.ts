@@ -2,18 +2,29 @@ import mongoose, { Document, Model, Schema } from 'mongoose';
 
 export interface IWebsiteData {
   url: string;
-  title: string;
-  description: string;
-  main_content: string;
-  headings: string[];
-  paragraphs: string[];
-  about_section: string;
-  services_section: string;
-  team_section: string;
-  testimonials: string;
-  key_phrases: string[];
-  contact_info: string;
-  full_text_summary: string;
+  websiteContent: string;
+}
+
+export interface IContactData {
+  firstName?: string;
+  lastName?: string;
+  company?: string;
+  position?: string;
+  email?: string;
+  phone?: string;
+  website?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  industry?: string;
+  personalization?: string;
+}
+
+export interface IFullPromptData {
+  systemPrompt: string;
+  contactContext: string;
+  userPrompt: string;
+  fullPrompt: string;
 }
 
 export interface IPersonalizationLog extends Document {
@@ -27,24 +38,37 @@ export interface IPersonalizationLog extends Document {
   originalPrompt: string;
   personalizedResult: string;
   websiteData?: IWebsiteData;
+  contactData?: IContactData;
+  fullPromptData?: IFullPromptData;
   processingTime?: number;
   createdAt: Date;
 }
 
 const WebsiteDataSchema = new Schema<IWebsiteData>({
   url: { type: String, required: true },
-  title: { type: String, default: '' },
-  description: { type: String, default: '' },
-  main_content: { type: String, default: '' },
-  headings: [{ type: String }],
-  paragraphs: [{ type: String }],
-  about_section: { type: String, default: '' },
-  services_section: { type: String, default: '' },
-  team_section: { type: String, default: '' },
-  testimonials: { type: String, default: '' },
-  key_phrases: [{ type: String }],
-  contact_info: { type: String, default: '' },
-  full_text_summary: { type: String, default: '' }
+  websiteContent: { type: String, default: '' }
+});
+
+const ContactDataSchema = new Schema<IContactData>({
+  firstName: { type: String },
+  lastName: { type: String },
+  company: { type: String },
+  position: { type: String },
+  email: { type: String },
+  phone: { type: String },
+  website: { type: String },
+  city: { type: String },
+  state: { type: String },
+  country: { type: String },
+  industry: { type: String },
+  personalization: { type: String }
+});
+
+const FullPromptDataSchema = new Schema<IFullPromptData>({
+  systemPrompt: { type: String, required: true },
+  contactContext: { type: String, required: true },
+  userPrompt: { type: String, required: true },
+  fullPrompt: { type: String, required: true }
 });
 
 const PersonalizationLogSchema = new Schema<IPersonalizationLog>(
@@ -91,6 +115,8 @@ const PersonalizationLogSchema = new Schema<IPersonalizationLog>(
       required: true,
     },
     websiteData: WebsiteDataSchema,
+    contactData: ContactDataSchema,
+    fullPromptData: FullPromptDataSchema,
     processingTime: {
       type: Number,
       min: 0,
