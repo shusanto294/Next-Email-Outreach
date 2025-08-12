@@ -111,6 +111,18 @@ export async function POST(req: NextRequest) {
         );
         
         console.log(`Added ${contactIds.length} contact IDs to campaign ${campaignId}`);
+        
+        // Set hasUpcomingSequence=true for all newly imported contacts
+        try {
+          await Contact.updateMany(
+            { _id: { $in: contactIds } },
+            { $set: { hasUpcomingSequence: true } }
+          );
+          console.log(`Set hasUpcomingSequence=true for ${contactIds.length} imported contacts`);
+        } catch (updateError) {
+          console.error('Error setting hasUpcomingSequence for imported contacts:', updateError);
+          // Don't fail the import if this update fails
+        }
       }
     }
 

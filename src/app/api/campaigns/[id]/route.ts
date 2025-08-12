@@ -10,7 +10,7 @@ const sequenceSchema = z.object({
   stepNumber: z.number().min(1),
   subject: z.string().optional(),
   content: z.string().optional(),
-  delayDays: z.coerce.number().min(0).default(0),
+  nextEmailAfter: z.coerce.number().min(0).default(7),
   isActive: z.boolean().default(true),
   useAiForSubject: z.boolean().default(false),
   aiSubjectPrompt: z.string().optional(),

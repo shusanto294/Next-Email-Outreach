@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Plus, Mail, Users, BarChart3, Play, Pause, Trash2, Edit } from 'lucide-react';
+import { Plus, Mail, Users, BarChart3, Trash2, Edit } from 'lucide-react';
 import DashboardHeader from '@/components/DashboardHeader';
 
 interface Campaign {
@@ -23,7 +23,7 @@ interface Campaign {
     stepNumber: number;
     subject: string;
     content: string;
-    delayDays: number;
+    nextEmailAfter: number;
     isActive: boolean;
   }>;
   schedule: {
@@ -92,29 +92,6 @@ export default function CampaignsPage() {
     }
   };
 
-  const toggleCampaignActive = async (id: string, isActive: boolean) => {
-    const token = localStorage.getItem('token');
-
-    try {
-      const response = await fetch(`/api/campaigns/${id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({ isActive }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to update campaign');
-      }
-
-      fetchCampaigns(); // Refresh the list
-    } catch (error) {
-      console.error('Error updating campaign:', error);
-      setError('Failed to update campaign');
-    }
-  };
 
   const deleteCampaign = async (id: string) => {
     if (!confirm('Are you sure you want to delete this campaign?')) {
@@ -161,7 +138,7 @@ export default function CampaignsPage() {
             stepNumber: 1,
             subject: 'Your Subject Here',
             content: 'Your email content here...',
-            delayDays: 0,
+            nextEmailAfter: 7,
             isActive: true,
           }],
           contactCount: 0,
@@ -272,14 +249,6 @@ export default function CampaignsPage() {
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => toggleCampaignActive(campaign._id, !campaign.isActive)}
-                        className={campaign.isActive ? 'text-orange-600 hover:text-orange-800' : 'text-green-600 hover:text-green-800'}
-                      >
-                        {campaign.isActive ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
                         onClick={() => router.push(`/dashboard/campaigns/${campaign._id}/edit`)}
                         className="text-blue-600 hover:text-blue-800"
                       >
@@ -310,14 +279,20 @@ export default function CampaignsPage() {
                       <div className="text-sm text-gray-600">Sequences</div>
                       <div className="text-lg font-medium">{campaign.sequences.length}</div>
                     </div>
-                    <div className="bg-gray-50 p-3 rounded">
-                      <div className="text-sm text-gray-600">Sent</div>
-                      <div className="text-lg font-medium">{campaign.emailSent}</div>
+                    <div className="bg-green-50 p-3 rounded border border-green-200">
+                      <div className="text-sm text-green-600">Emails Sent</div>
+                      <div className="text-2xl font-bold text-green-700">{campaign.stats?.sent || 0}</div>
+                      <div className="text-xs text-green-500 mt-1">
+                        total emails delivered
+                      </div>
                     </div>
-                    <div className="bg-gray-50 p-3 rounded">
-                      <div className="text-sm text-gray-600">Open Rate</div>
-                      <div className="text-lg font-medium">
-                        {calculateOpenRate(campaign.stats.opened, campaign.emailSent)}%
+                    <div className="bg-purple-50 p-3 rounded border border-purple-200">
+                      <div className="text-sm text-purple-600">Open Rate</div>
+                      <div className="text-2xl font-bold text-purple-700">
+                        {calculateOpenRate(campaign.stats?.opened || 0, campaign.stats?.sent || 0)}%
+                      </div>
+                      <div className="text-xs text-purple-500 mt-1">
+                        emails opened
                       </div>
                     </div>
                   </div>
@@ -337,14 +312,21 @@ export default function CampaignsPage() {
                     </div>
                   </div>
 
-                  {campaign.emailSent > 0 && (
+                  {/* Campaign Performance Metrics */}
+                  {(campaign.stats?.sent || 0) > 0 && (
                     <div className="mt-4 pt-4 border-t">
+                      <h4 className="text-sm font-medium text-gray-700 mb-2">Performance Metrics</h4>
                       <div className="flex items-center justify-between text-sm">
                         <div className="flex space-x-6">
-                          <span>Delivered: {campaign.stats.delivered}</span>
-                          <span>Opened: {campaign.stats.opened}</span>
-                          <span>Clicked: {campaign.stats.clicked}</span>
-                          <span>Replied: {campaign.stats.replied}</span>
+                          <span className="text-green-600">
+                            Open Rate: {calculateOpenRate(campaign.stats?.opened || 0, campaign.stats?.sent || 0)}%
+                          </span>
+                          <span className="text-blue-600">
+                            Click Rate: {campaign.stats?.sent > 0 ? Math.round(((campaign.stats?.clicked || 0) / campaign.stats.sent) * 100) : 0}%
+                          </span>
+                          <span className="text-purple-600">
+                            Reply Rate: {campaign.stats?.sent > 0 ? Math.round(((campaign.stats?.replied || 0) / campaign.stats.sent) * 100) : 0}%
+                          </span>
                         </div>
                         <div className="flex space-x-6 text-red-600">
                           <span>Bounced: {campaign.stats.bounced}</span>

@@ -10,7 +10,7 @@ const sequenceSchema = z.object({
   stepNumber: z.number().min(1),
   subject: z.string().optional(),
   content: z.string().optional(),
-  delayDays: z.number().min(0).default(0),
+  nextEmailAfter: z.number().min(0).optional(),
   isActive: z.boolean().default(true),
   useAiForSubject: z.boolean().default(false),
   aiSubjectPrompt: z.string().optional(),
@@ -155,6 +155,20 @@ export async function POST(req: NextRequest) {
     console.log('Campaign model created, saving...');
     await campaign.save();
     console.log('Campaign saved successfully');
+
+    // If campaign has contacts, set hasUpcomingSequence=true for all contacts
+    if (validatedData.contactIds && validatedData.contactIds.length > 0) {
+      try {
+        const contactUpdateResult = await Contact.updateMany(
+          { _id: { $in: validatedData.contactIds } },
+          { $set: { hasUpcomingSequence: true } }
+        );
+        console.log(`Updated hasUpcomingSequence for ${contactUpdateResult.modifiedCount} contacts`);
+      } catch (contactUpdateError) {
+        console.error('Error updating contacts hasUpcomingSequence:', contactUpdateError);
+        // Don't fail the request if contact updates fail
+      }
+    }
 
     // Populate the response
     await campaign.populate('emailAccountIds', 'email provider fromName replyToEmail');

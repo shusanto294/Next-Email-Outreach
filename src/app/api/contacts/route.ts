@@ -171,3 +171,67 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
+
+// PATCH update contacts' hasUpcomingSequence field for a campaign
+export async function PATCH(req: NextRequest) {
+  try {
+    const user = await authenticateUser(req);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { campaignId, hasUpcomingSequence } = await req.json();
+
+    if (!campaignId) {
+      return NextResponse.json({ error: 'Campaign ID is required' }, { status: 400 });
+    }
+
+    if (typeof hasUpcomingSequence !== 'boolean') {
+      return NextResponse.json({ error: 'hasUpcomingSequence must be a boolean' }, { status: 400 });
+    }
+
+    await connectDB();
+
+    // Verify campaign exists and belongs to user
+    const campaign = await Campaign.findOne({
+      _id: campaignId,
+      userId: user._id
+    });
+
+    if (!campaign) {
+      return NextResponse.json({ error: 'Campaign not found' }, { status: 404 });
+    }
+
+    // Find all contacts for this campaign that currently have hasUpcomingSequence=false
+    const query: any = {
+      userId: user._id,
+      hasUpcomingSequence: false
+    };
+
+    // Only update contacts that are in the campaign's contactIds array
+    if (campaign.contactIds && campaign.contactIds.length > 0) {
+      query._id = { $in: campaign.contactIds };
+    } else {
+      // No contacts in this campaign
+      return NextResponse.json({
+        message: 'No contacts found in campaign',
+        updatedCount: 0
+      });
+    }
+
+    // Update contacts' hasUpcomingSequence field
+    const updateResult = await Contact.updateMany(
+      query,
+      { $set: { hasUpcomingSequence } }
+    );
+
+    return NextResponse.json({
+      message: `Updated ${updateResult.modifiedCount} contacts`,
+      updatedCount: updateResult.modifiedCount
+    });
+
+  } catch (error) {
+    console.error('Update contacts hasUpcomingSequence error:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
+}

@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
         stepNumber: 1,
         subject: 'Test Subject',
         content: 'Test Content',
-        delayDays: 0,
+        // Let the model default handle nextEmailAfter
         isActive: true
       }],
       contacts: [], // Start with empty contacts array

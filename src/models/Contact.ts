@@ -22,7 +22,8 @@ export interface IContact extends Document {
   schedule: Date;
   status: 'active' | 'unsubscribed' | 'bounced' | 'complained' | 'do-not-contact';
   lastContacted?: Date;
-  sent: number;
+  timesContacted: number;
+  hasUpcomingSequence: boolean;
   notes?: string;
   createdAt: Date;
   updatedAt: Date;
@@ -134,10 +135,14 @@ const ContactSchema = new Schema<IContact>(
     lastContacted: {
       type: Date,
     },
-    sent: {
+    timesContacted: {
       type: Number,
       default: 0,
       min: 0,
+    },
+    hasUpcomingSequence: {
+      type: Boolean,
+      default: false,
     },
     notes: {
       type: String,

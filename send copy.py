@@ -6,7 +6,7 @@ from pymongo import MongoClient
 from bson import ObjectId
 import pytz
 
-wait_time = 1
+wait_time = 0
 
 load_dotenv('.env.local')
 
@@ -98,14 +98,8 @@ def can_send_email_now(campaign):
         tuple: (can_send: bool, reason: str)
     """
     try:
-        # Get user information for timezone using campaign owner userId
-        user_id = campaign.get('userId')
-        if isinstance(user_id, str):
-            try:
-                user_id = ObjectId(user_id)
-            except Exception:
-                pass
-        user = users_collection.find_one({'_id': user_id})
+        # Get user information for timezone
+        user = users_collection.find_one({'_id': campaign.get('userId')})
         if not user:
             return False, "User not found"
         
@@ -139,35 +133,15 @@ def can_send_email_now(campaign):
         print(f"📅 Allowed sending hours: {start_hour_str} - {end_hour_str}")
         print(f"📅 Allowed sending days: {sending_days}")
         
-        # Determine if the window crosses midnight (overnight window)
-        is_overnight_window = start_hour > end_hour
-
-        # Determine effective weekday when in an overnight window and before end_hour
+        # Check if current day is allowed (0=Monday, 6=Sunday)
+        current_weekday = current_time_user.weekday()
+        if current_weekday not in sending_days:
+            return False, f"Today is not a sending day. Current: {current_weekday}, Allowed: {sending_days}"
+        
+        # Check if current time is within sending hours
         current_time_only = current_time_user.time()
-        if is_overnight_window and current_time_only <= end_hour:
-            # For times after midnight and before end time, treat as previous day's sending window
-            effective_weekday = (current_time_user - timedelta(days=1)).weekday()
-        else:
-            effective_weekday = current_time_user.weekday()
-
-        # Check if effective day is allowed (0=Monday, 6=Sunday)
-        if effective_weekday not in sending_days:
-            return False, (
-                f"Today is not a sending day. Current (effective): {effective_weekday}, Allowed: {sending_days}"
-            )
-
-        # Check if current time is within sending hours, supporting overnight ranges
-        if not is_overnight_window:
-            in_window = start_hour <= current_time_only <= end_hour
-        else:
-            # Overnight: allowed if after start or before end (e.g., 21:00-05:00)
-            in_window = (current_time_only >= start_hour) or (current_time_only <= end_hour)
-
-        if not in_window:
-            window_desc = f"{start_hour_str}-{end_hour_str}"
-            return False, (
-                f"Current time {current_time_only.strftime('%H:%M')} is outside sending hours {window_desc}"
-            )
+        if not (start_hour <= current_time_only <= end_hour):
+            return False, f"Current time {current_time_only.strftime('%H:%M')} is outside sending hours {start_hour_str}-{end_hour_str}"
         
         return True, "Schedule check passed"
         
@@ -589,7 +563,7 @@ def main():
                                     # Apply delay between emails based on campaign settings
                                     email_delay_seconds = campaign.get('schedule', {}).get('emailDelaySeconds', 60)
                                     print(f"⏱️  Waiting {email_delay_seconds} seconds before next email (campaign delay setting)...")
-                                    time.sleep(email_delay_seconds)
+                                    # time.sleep(email_delay_seconds)
                     
                     print("-" * 50)  # Separator between contacts
             else:

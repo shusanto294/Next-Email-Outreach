@@ -4,7 +4,7 @@ export interface IEmailSequence {
   stepNumber: number;
   subject: string;
   content: string;
-  delayDays: number;
+  nextEmailAfter: number;
   isActive: boolean;
   useAiForSubject?: boolean;
   aiSubjectPrompt?: string;
@@ -22,10 +22,8 @@ export interface ICampaign extends Document {
     name: string;
     defaultValue: string;
   }>;
-  nextEmailAccountToUse: number;
-  nextContactToUse: number;
-  emailSent: number;
   isActive: boolean;
+  mode: 'test' | 'live';
   schedule: {
     sendingHours: {
       start: string;
@@ -64,10 +62,9 @@ const EmailSequenceSchema = new Schema<IEmailSequence>({
     type: String,
     required: false,
   },
-  delayDays: {
+  nextEmailAfter: {
     type: Number,
-    required: true,
-    default: 0,
+    default: 7,
   },
   isActive: {
     type: Boolean,
@@ -93,6 +90,11 @@ const EmailSequenceSchema = new Schema<IEmailSequence>({
 
 // Add custom validation to ensure either manual or AI fields are provided
 EmailSequenceSchema.pre('validate', function() {
+  // Ensure nextEmailAfter has a default value
+  if (this.nextEmailAfter === undefined || this.nextEmailAfter === null) {
+    this.nextEmailAfter = 7;
+  }
+  
   // Subject validation
   if (!this.useAiForSubject && (!this.subject || this.subject.trim().length === 0)) {
     this.invalidate('subject', 'Subject is required when not using AI for subject');
@@ -143,21 +145,14 @@ const CampaignSchema = new Schema<ICampaign>(
         trim: true,
       },
     }],
-    nextEmailAccountToUse: {
-      type: Number,
-      default: 0,
-    },
-    nextContactToUse: {
-      type: Number,
-      default: 0,
-    },
-    emailSent: {
-      type: Number,
-      default: 0,
-    },
     isActive: {
       type: Boolean,
       default: true,
+    },
+    mode: {
+      type: String,
+      enum: ['test', 'live'],
+      default: 'test',
     },
     schedule: {
       sendingHours: {

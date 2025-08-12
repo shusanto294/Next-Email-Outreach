@@ -21,8 +21,6 @@ interface Contact {
   companyLinkedin?: string;
   personalization?: string;
   status: 'active' | 'unsubscribed' | 'bounced' | 'complained' | 'do-not-contact';
-  emailStatus: 'never-sent' | 'sent' | 'delivered' | 'opened' | 'clicked' | 'replied' | 'bounced';
-  source?: string;
   notes?: string;
   campaignId?: {
     _id: string;
@@ -55,7 +53,6 @@ export default function ContactsPage() {
     companyLinkedin: '',
     personalization: '',
     campaignId: '',
-    source: '',
     notes: ''
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -212,7 +209,6 @@ export default function ContactsPage() {
       companyLinkedin: contact.companyLinkedin || '',
       personalization: contact.personalization || '',
       campaignId: contact.campaignId?._id || '',
-      source: contact.source || '',
       notes: contact.notes || ''
     });
     setShowCreateForm(true);
@@ -258,7 +254,6 @@ export default function ContactsPage() {
       companyLinkedin: '',
       personalization: '',
       campaignId: '',
-      source: '',
       notes: ''
     });
   };
@@ -281,18 +276,6 @@ export default function ContactsPage() {
     return colors[status as keyof typeof colors] || 'bg-gray-100 text-gray-800';
   };
 
-  const getEmailStatusBadge = (emailStatus: string) => {
-    const colors = {
-      'never-sent': 'bg-gray-100 text-gray-800',
-      sent: 'bg-blue-100 text-blue-800',
-      delivered: 'bg-green-100 text-green-800',
-      opened: 'bg-purple-100 text-purple-800',
-      clicked: 'bg-indigo-100 text-indigo-800',
-      replied: 'bg-emerald-100 text-emerald-800',
-      bounced: 'bg-red-100 text-red-800'
-    };
-    return colors[emailStatus as keyof typeof colors] || 'bg-gray-100 text-gray-800';
-  };
 
   if (isLoading) {
     return (
@@ -508,28 +491,15 @@ export default function ContactsPage() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      LinkedIn
-                    </label>
-                    <Input
-                      value={formData.linkedin}
-                      onChange={(e) => setFormData({ ...formData, linkedin: e.target.value })}
-                      placeholder="https://linkedin.com/in/johndoe"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Source
-                    </label>
-                    <Input
-                      value={formData.source}
-                      onChange={(e) => setFormData({ ...formData, source: e.target.value })}
-                      placeholder="Manual Entry, Import, etc."
-                    />
-                  </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    LinkedIn
+                  </label>
+                  <Input
+                    value={formData.linkedin}
+                    onChange={(e) => setFormData({ ...formData, linkedin: e.target.value })}
+                    placeholder="https://linkedin.com/in/johndoe"
+                  />
                 </div>
 
                 <div>
@@ -585,7 +555,6 @@ export default function ContactsPage() {
                       <th className="text-left p-3 font-medium">Company</th>
                       <th className="text-left p-3 font-medium">Campaign</th>
                       <th className="text-left p-3 font-medium">Status</th>
-                      <th className="text-left p-3 font-medium">Email Status</th>
                       <th className="text-left p-3 font-medium">Actions</th>
                     </tr>
                   </thead>
@@ -633,11 +602,6 @@ export default function ContactsPage() {
                         <td className="p-3">
                           <span className={`px-2 py-1 text-xs rounded ${getStatusBadge(contact.status)}`}>
                             {contact.status.replace('-', ' ')}
-                          </span>
-                        </td>
-                        <td className="p-3">
-                          <span className={`px-2 py-1 text-xs rounded ${getEmailStatusBadge(contact.emailStatus)}`}>
-                            {contact.emailStatus.replace('-', ' ')}
                           </span>
                         </td>
                         <td className="p-3">

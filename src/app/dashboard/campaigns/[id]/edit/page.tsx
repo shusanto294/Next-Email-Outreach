@@ -16,7 +16,7 @@ const sequenceSchema = z.object({
   stepNumber: z.number().min(1),
   subject: z.string().optional(),
   content: z.string().optional(),
-  delayDays: z.coerce.number().min(0).default(0),
+  nextEmailAfter: z.coerce.number().min(0).default(7),
   isActive: z.boolean().default(true),
   useAiForSubject: z.boolean().default(false),
   aiSubjectPrompt: z.string().optional(),
@@ -48,6 +48,7 @@ const campaignSchema = z.object({
   name: z.string().min(1, 'Campaign name is required'),
   sequences: z.array(sequenceSchema).min(1, 'At least one email sequence is required'),
   isActive: z.boolean().default(true),
+  mode: z.enum(['test', 'live']).default('test'),
   emailAccountIds: z.array(z.string()).default([]),
   schedule: z.object({
     sendingHours: z.object({
@@ -115,7 +116,7 @@ interface Campaign {
     stepNumber: number;
     subject: string;
     content: string;
-    delayDays: number;
+    nextEmailAfter: number;
     isActive: boolean;
     useAiForSubject?: boolean;
     aiSubjectPrompt?: string;
@@ -155,11 +156,11 @@ export default function EditCampaignPage() {
   const [contactsLoading, setContactsLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalContacts, setTotalContacts] = useState(0);
-  const [activeTab, setActiveTab] = useState<'details' | 'contacts' | 'sequences' | 'schedule'>('details');
+  const [activeTab, setActiveTab] = useState<'details' | 'sequences' | 'contacts' | 'schedule' | 'launch'>('details');
   
   const CONTACTS_PER_PAGE = 10;
   
-  const tabOrder: ('details' | 'contacts' | 'sequences' | 'schedule')[] = ['details', 'contacts', 'sequences', 'schedule'];
+  const tabOrder: ('details' | 'sequences' | 'contacts' | 'schedule' | 'launch')[] = ['details', 'sequences', 'contacts', 'schedule', 'launch'];
   const currentTabIndex = tabOrder.indexOf(activeTab);
   const isFirstTab = currentTabIndex === 0;
   const isLastTab = currentTabIndex === tabOrder.length - 1;
@@ -189,6 +190,9 @@ export default function EditCampaignPage() {
     reset,
   } = useForm<CampaignForm>({
     resolver: zodResolver(campaignSchema),
+    defaultValues: {
+      mode: 'test',
+    },
   });
 
   const { fields, append, remove } = useFieldArray({
@@ -241,26 +245,27 @@ export default function EditCampaignPage() {
         emailAccountsRes.json()
       ]);
 
-      const campaign = campaignData.campaign;
-      setCampaign(campaign);
+      const fetchedCampaign: Campaign = campaignData.campaign;
+      setCampaign(fetchedCampaign);
       setEmailAccounts(emailAccountsData.emailAccounts.filter((acc: EmailAccount) => acc.isActive));
       
       // Set current email accounts as selected
-      setSelectedEmailAccounts(campaign.emailAccountIds.map(acc => acc._id));
+      setSelectedEmailAccounts(fetchedCampaign.emailAccountIds.map((acc) => acc._id));
       
       // Campaign contact count is now handled via contactCount field
 
 
       // Reset form with campaign data
       reset({
-        name: campaign.name,
-        sequences: campaign.sequences,
-        isActive: campaign.isActive,
-        emailAccountIds: campaign.emailAccountIds.map(acc => acc._id),
-        schedule: campaign.schedule,
-        trackOpens: campaign.trackOpens,
-        trackClicks: campaign.trackClicks,
-        unsubscribeLink: campaign.unsubscribeLink,
+        name: fetchedCampaign.name,
+        sequences: fetchedCampaign.sequences,
+        isActive: fetchedCampaign.isActive,
+        emailAccountIds: fetchedCampaign.emailAccountIds.map((acc) => acc._id),
+        schedule: fetchedCampaign.schedule,
+        trackOpens: fetchedCampaign.trackOpens,
+        trackClicks: fetchedCampaign.trackClicks,
+        unsubscribeLink: fetchedCampaign.unsubscribeLink,
+        mode: (fetchedCampaign as any).mode || 'test',
       });
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -528,7 +533,7 @@ export default function EditCampaignPage() {
         const newContactsCount = responseData.contacts.length;
         const previousContactCount = campaign?.contactCount || 0;
         const totalContactsNow = previousContactCount + newContactsCount;
-        const duplicatesCount = responseData.errors ? responseData.errors.filter(error => error.includes('already exists')).length : 0;
+        const duplicatesCount = responseData.errors ? responseData.errors.filter((error: string) => error.includes('already exists')).length : 0;
         const processedCount = responseData.total || contacts.length;
         
         setUploadedContacts(responseData.contacts);
@@ -661,18 +666,47 @@ export default function EditCampaignPage() {
     }
   };
 
-  const addSequence = () => {
+  const addSequence = async () => {
     append({
       stepNumber: fields.length + 1,
       subject: '',
       content: '',
-      delayDays: fields.length === 0 ? 0 : 3,
+      nextEmailAfter: 7,
       isActive: true,
       useAiForSubject: false,
       aiSubjectPrompt: '',
       useAiForContent: false,
       aiContentPrompt: '',
     });
+
+    // Update contacts' hasUpcomingSequence field
+    if (campaignId) {
+      const token = localStorage.getItem('token');
+      if (token) {
+        try {
+          const response = await fetch('/api/contacts', {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              campaignId,
+              hasUpcomingSequence: true,
+            }),
+          });
+
+          if (response.ok) {
+            const result = await response.json();
+            console.log(`Updated ${result.updatedCount} contacts with hasUpcomingSequence=true for follow-up sequence`);
+          } else {
+            console.error('Failed to update contacts hasUpcomingSequence field');
+          }
+        } catch (error) {
+          console.error('Error updating contacts hasUpcomingSequence field:', error);
+        }
+      }
+    }
   };
 
   const toggleEmailAccountSelection = (accountId: string) => {
@@ -758,9 +792,10 @@ export default function EditCampaignPage() {
           <nav className="flex space-x-8">
             {[
               { key: 'details', label: 'Campaign Details' },
-              { key: 'contacts', label: 'Contacts', badge: campaign?.contactCount },
               { key: 'sequences', label: 'Email Sequences', badge: campaign?.sequences?.length },
+              { key: 'contacts', label: 'Contacts', badge: campaign?.contactCount },
               { key: 'schedule', label: 'Schedule Settings' },
+              { key: 'launch', label: 'Launch' },
             ].map((tab) => (
               <button
                 key={tab.key}
@@ -786,7 +821,7 @@ export default function EditCampaignPage() {
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-8">
           {/* Campaign Details Tab */}
           {activeTab === 'details' && (
-          <Card>
+            <Card>
             <CardHeader>
               <CardTitle>Campaign Details</CardTitle>
               <CardDescription>
@@ -794,7 +829,7 @@ export default function EditCampaignPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Campaign Name *
@@ -808,32 +843,6 @@ export default function EditCampaignPage() {
                     <p className="text-red-500 text-sm mt-1">{errors.name.message}</p>
                   )}
                 </div>
-
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="text-sm font-medium text-gray-700">
-                      Campaign Status
-                    </label>
-                    <div className="flex items-center space-x-3">
-                      <span className="text-xs font-medium text-gray-600">
-                        Inactive
-                      </span>
-                      <ToggleSwitch
-                        checked={isActive || false}
-                        onCheckedChange={(checked) => setValue('isActive', checked)}
-                        size="sm"
-                      />
-                      <span className="text-xs font-medium text-green-600">
-                        Active
-                      </span>
-                    </div>
-                  </div>
-                  <p className="text-xs text-gray-500">
-                    {isActive ? 'Campaign is active and can send emails' : 'Campaign is inactive and will not send emails'}
-                  </p>
-                </div>
-              </div>
-
 
               {/* Email Account Selection */}
               <div>
@@ -910,19 +919,18 @@ export default function EditCampaignPage() {
                     
                     {selectedEmailAccounts.length > 1 && (
                       <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-sm text-blue-700">
-                        <strong>Note:</strong> This campaign will use all {selectedEmailAccounts.length} selected email accounts 
-                        for sending emails.
+                        <strong>Note:</strong> This campaign will use all {selectedEmailAccounts.length} selected email accounts for sending emails.
                       </div>
                     )}
                   </div>
                 )}
               </div>
-
+              </div>
             </CardContent>
-          </Card>
+            </Card>
           )}
 
-          {/* Contacts Tab */}
+        {/* Contacts Tab */}
           {activeTab === 'contacts' && (
           <Card>
             <CardHeader>
@@ -1321,19 +1329,6 @@ export default function EditCampaignPage() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Delay (days)
-                    </label>
-                    <Input
-                      type="number"
-                      {...register(`sequences.${index}.delayDays`)}
-                      min="0"
-                      placeholder="0"
-                      className="w-full"
-                    />
-                  </div>
-
-                  <div>
                     <div className="flex items-center justify-between mb-2">
                       <label className="block text-sm font-medium text-gray-700">
                         Subject Line *
@@ -1433,20 +1428,21 @@ Best regards,
                     )}
                   </div>
 
-                  <div className="flex items-center space-x-2">
-                    <input
-                      type="checkbox"
-                      {...register(`sequences.${index}.isActive`)}
-                      className="rounded"
-                    />
-                    <label className="text-sm text-gray-700">
-                      This email sequence is active
-                    </label>
+                  <div className="text-xs text-gray-500 mb-4">
+                    <p><strong>Available variables:</strong> {'{{firstName}}'}, {'{{lastName}}'}, {'{{company}}'}, {'{{position}}'}, {'{{phone}}'}, {'{{website}}'}, {'{{linkedin}}'}</p>
                   </div>
 
-                  <div className="text-xs text-gray-500">
-                    <p><strong>Available variables:</strong> {'{{firstName}}'}, {'{{lastName}}'}, {'{{company}}'}, {'{{position}}'}, {'{{phone}}'}, {'{{website}}'}, {'{{linkedin}}'}, {'{{fromName}}'}, {'{{personalization}}'}</p>
-                    <p><strong>Personalization:</strong> Use {'{{personalization}}'} to include the AI-generated personalization from the contact&apos;s database entry.</p>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Next Email After (days)
+                    </label>
+                    <Input
+                      type="number"
+                      {...register(`sequences.${index}.nextEmailAfter`)}
+                      min="0"
+                      placeholder="7"
+                      className="w-full"
+                    />
                   </div>
                 </div>
               ))}
@@ -1564,6 +1560,85 @@ Best regards,
                     className="rounded mr-2"
                   />
                   <label className="text-sm">Include unsubscribe link</label>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          )}
+
+          {/* Launch Tab */}
+          {activeTab === 'launch' && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Launch Campaign</CardTitle>
+              <CardDescription>
+                Configure campaign status and mode before launching
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-sm font-medium text-gray-700">
+                    Campaign Status
+                  </label>
+                  <div className="flex items-center space-x-3">
+                    <span className="text-xs font-medium text-gray-600">
+                      Inactive
+                    </span>
+                    <ToggleSwitch
+                      checked={watch('isActive') || false}
+                      onCheckedChange={(checked) => setValue('isActive', checked)}
+                      size="sm"
+                    />
+                    <span className="text-xs font-medium text-green-600">
+                      Active
+                    </span>
+                  </div>
+                </div>
+                <p className="text-xs text-gray-500 mb-4">
+                  {watch('isActive') ? 'Campaign is active and can send emails' : 'Campaign is inactive and will not send emails'}
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-3">
+                  Campaign Mode
+                </label>
+                <div className="flex space-x-4">
+                  <label className="flex items-center">
+                    <input
+                      type="radio"
+                      {...register('mode')}
+                      value="test"
+                      className="mr-2"
+                    />
+                    <span className="text-sm">Test Mode</span>
+                  </label>
+                  <label className="flex items-center">
+                    <input
+                      type="radio"
+                      {...register('mode')}
+                      value="live"
+                      className="mr-2"
+                    />
+                    <span className="text-sm">Live Mode</span>
+                  </label>
+                </div>
+                <p className="text-xs text-gray-500 mt-2">
+                  Test mode will generate the email personalizations using AI, which is helpful for fine-tuning your prompt. Live mode is recommended when you are fully satisfied with the AI prompt and the generated results.
+                </p>
+              </div>
+
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <h4 className="text-sm font-medium text-blue-900 mb-2">Campaign Summary</h4>
+                <div className="text-sm text-blue-800 space-y-1">
+                  <p>• <strong>{campaign?.sequences?.length || 0}</strong> email sequences configured</p>
+                  <p>• <strong>{campaign?.contactCount || 0}</strong> contacts targeted</p>
+                  <p>• <strong>{selectedEmailAccounts.length}</strong> email accounts selected</p>
+                  <p>• Status: <strong className={watch('isActive') ? 'text-green-600' : 'text-orange-600'}>
+                    {watch('isActive') ? 'Active' : 'Inactive'}
+                  </strong></p>
+                  <p>• Mode: <strong>{watch('mode') || 'Test'}</strong></p>
                 </div>
               </div>
             </CardContent>
