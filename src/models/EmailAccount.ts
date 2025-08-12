@@ -15,6 +15,8 @@ export interface IEmailAccount extends Document {
   fromName?: string;
   replyToEmail?: string;
   dailyLimit: number;
+  sentToday: number;
+  lastResetDate: Date;
   isActive: boolean;
   isWarmedUp: boolean;
   reputation: number;
@@ -88,6 +90,14 @@ const EmailAccountSchema = new Schema<IEmailAccount>(
     dailyLimit: {
       type: Number,
       default: 50,
+    },
+    sentToday: {
+      type: Number,
+      default: 0,
+    },
+    lastResetDate: {
+      type: Date,
+      default: Date.now,
     },
     isActive: {
       type: Boolean,

@@ -43,6 +43,8 @@ interface EmailAccount {
   imapPort: number;
   isActive: boolean;
   dailyLimit: number;
+  sentToday: number;
+  lastResetDate?: string;
   lastUsed?: string;
 }
 
@@ -611,6 +613,18 @@ export default function EmailAccountsPage() {
                           <p>SMTP: {account.smtpHost}:{account.smtpPort}</p>
                           <p>IMAP: {account.imapHost}:{account.imapPort}</p>
                           <p>Daily Limit: {account.dailyLimit} emails</p>
+                          <p className="font-medium">
+                            Sent Today: 
+                            <span className={`ml-1 ${
+                              (account.sentToday || 0) >= account.dailyLimit 
+                                ? 'text-red-600' 
+                                : (account.sentToday || 0) > account.dailyLimit * 0.8 
+                                ? 'text-yellow-600' 
+                                : 'text-green-600'
+                            }`}>
+                              {account.sentToday || 0}/{account.dailyLimit}
+                            </span>
+                          </p>
                           {account.lastUsed && (
                             <p>Last Used: {new Date(account.lastUsed).toLocaleDateString()}</p>
                           )}
@@ -624,6 +638,15 @@ export default function EmailAccountsPage() {
                           : 'bg-red-100 text-red-800'
                       }`}>
                         {account.isActive ? 'Active' : 'Inactive'}
+                      </span>
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                        (account.sentToday || 0) >= account.dailyLimit 
+                          ? 'bg-red-100 text-red-800' 
+                          : (account.sentToday || 0) > account.dailyLimit * 0.8 
+                          ? 'bg-yellow-100 text-yellow-800' 
+                          : 'bg-blue-100 text-blue-800'
+                      }`}>
+                        {account.sentToday || 0}/{account.dailyLimit} sent
                       </span>
                       <Button
                         variant="outline"

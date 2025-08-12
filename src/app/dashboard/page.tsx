@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { ToggleSwitch } from '@/components/ui/toggle-switch';
 import DashboardHeader from '@/components/DashboardHeader';
 
 interface User {
@@ -17,11 +16,8 @@ interface User {
   emailsSent: number;
   emailsLimit: number;
   timezone?: string;
-  aiProvider?: 'openai' | 'deepseek' | null;
   openaiApiKey?: string;
   openaiModel?: string;
-  deepseekApiKey?: string;
-  deepseekModel?: string;
 }
 
 
@@ -29,11 +25,8 @@ interface User {
 export default function DashboardPage() {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [aiProvider, setAiProvider] = useState<'openai' | 'deepseek' | null>(null);
   const [openaiApiKey, setOpenaiApiKey] = useState('');
-  const [openaiModel, setOpenaiModel] = useState('gpt-4o-mini');
-  const [deepseekApiKey, setDeepseekApiKey] = useState('');
-  const [deepseekModel, setDeepseekModel] = useState('deepseek-chat');
+  const [openaiModel, setOpenaiModel] = useState('gpt-3.5-turbo');
   const [timezone, setTimezone] = useState('UTC');
   const [isSaving, setIsSaving] = useState(false);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
@@ -63,11 +56,8 @@ export default function DashboardPage() {
 
         const data = await response.json();
         setUser(data.user);
-        setAiProvider(data.user.aiProvider || null);
         setOpenaiApiKey(data.user.openaiApiKey || '');
-        setOpenaiModel(data.user.openaiModel || 'gpt-4o-mini');
-        setDeepseekApiKey(data.user.deepseekApiKey || '');
-        setDeepseekModel(data.user.deepseekModel || 'deepseek-chat');
+        setOpenaiModel(data.user.openaiModel || 'gpt-3.5-turbo');
         setTimezone(data.user.timezone || 'UTC');
       } catch (error) {
         localStorage.removeItem('token');
@@ -90,17 +80,6 @@ export default function DashboardPage() {
   };
 
   const handleSaveAiSettings = async () => {
-    // If a provider is selected, make sure its API key is provided (either currently entered or previously saved)
-    if (aiProvider === 'openai' && !openaiApiKey.trim() && !user?.openaiApiKey) {
-      setSaveMessage('Please enter OpenAI API key for the selected provider');
-      return;
-    }
-
-    if (aiProvider === 'deepseek' && !deepseekApiKey.trim() && !user?.deepseekApiKey) {
-      setSaveMessage('Please enter DeepSeek API key for the selected provider');
-      return;
-    }
-
     setIsSaving(true);
     setSaveMessage('');
 
@@ -113,11 +92,9 @@ export default function DashboardPage() {
           'Authorization': `Bearer ${token}`,
         },
         body: JSON.stringify({
-          aiProvider,
+          aiProvider: 'openai', // Always use OpenAI
           openaiApiKey: openaiApiKey.trim(),
           openaiModel,
-          deepseekApiKey: deepseekApiKey.trim(),
-          deepseekModel,
         }),
       });
 
@@ -127,23 +104,16 @@ export default function DashboardPage() {
 
       const data = await response.json();
       setUser(data.user);
-      setSaveMessage('AI settings saved successfully!');
+      setSaveMessage('Open AI settings saved successfully!');
       setTimeout(() => setSaveMessage(''), 3000);
     } catch (error) {
-      setSaveMessage('Failed to save AI settings. Please try again.');
+      setSaveMessage('Failed to save Open AI settings. Please try again.');
       setTimeout(() => setSaveMessage(''), 3000);
     } finally {
       setIsSaving(false);
     }
   };
 
-  const handleProviderChange = (provider: 'openai' | 'deepseek') => {
-    if (aiProvider === provider) {
-      setAiProvider(null); // Deactivate if clicking the same provider
-    } else {
-      setAiProvider(provider); // Switch to the new provider
-    }
-  };
 
   const handleSaveUserSettings = async () => {
     setIsSavingSettings(true);
@@ -258,51 +228,18 @@ export default function DashboardPage() {
           </Card>
         </div>
 
-        {/* AI Model Settings */}
+        {/* Open AI Settings */}
         <div className="grid md:grid-cols-2 gap-6 mb-8">
           <Card>
             <CardHeader>
-              <CardTitle>AI Model</CardTitle>
+              <CardTitle>Open AI</CardTitle>
               <CardDescription>
-                Configure your AI provider for email personalization
+                Configure OpenAI for email personalization
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              {/* Current Active Provider */}
-              {aiProvider && (
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                  <p className="text-sm font-medium text-blue-800">
-                    Active Provider: {aiProvider === 'openai' ? 'OpenAI' : 'DeepSeek'}
-                  </p>
-                  <p className="text-xs text-blue-600">
-                    This provider will be used for AI-generated content
-                  </p>
-                </div>
-              )}
-
               {/* OpenAI Section */}
-              <div className="border rounded-lg p-4 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
-                      <span className="text-green-600 font-bold text-sm">AI</span>
-                    </div>
-                    <div>
-                      <h3 className="font-medium text-gray-900">OpenAI</h3>
-                      <p className="text-sm text-gray-500">GPT-4 & GPT-3.5 models</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <span className="text-xs text-gray-500">Inactive</span>
-                    <ToggleSwitch
-                      checked={aiProvider === 'openai'}
-                      onCheckedChange={() => handleProviderChange('openai')}
-                      size="md"
-                    />
-                    <span className="text-xs text-green-600">Active</span>
-                  </div>
-                </div>
-
+              <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -325,63 +262,33 @@ export default function DashboardPage() {
                       onChange={(e) => setOpenaiModel(e.target.value)}
                       className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                     >
-                      <option value="gpt-4o">GPT-4o</option>
-                      <option value="gpt-4o-mini">GPT-4o Mini</option>
-                      <option value="gpt-4-turbo">GPT-4 Turbo</option>
-                      <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              {/* DeepSeek Section */}
-              <div className="border rounded-lg p-4 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                      <span className="text-blue-600 font-bold text-sm">DS</span>
-                    </div>
-                    <div>
-                      <h3 className="font-medium text-gray-900">DeepSeek</h3>
-                      <p className="text-sm text-gray-500">Advanced reasoning models</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <span className="text-xs text-gray-500">Inactive</span>
-                    <ToggleSwitch
-                      checked={aiProvider === 'deepseek'}
-                      onCheckedChange={() => handleProviderChange('deepseek')}
-                      size="md"
-                    />
-                    <span className="text-xs text-blue-600">Active</span>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      API Key
-                    </label>
-                    <Input
-                      type="password"
-                      value={deepseekApiKey}
-                      onChange={(e) => setDeepseekApiKey(e.target.value)}
-                      placeholder="Enter DeepSeek API key"
-                      className="w-full"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Model
-                    </label>
-                    <select
-                      value={deepseekModel}
-                      onChange={(e) => setDeepseekModel(e.target.value)}
-                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                    >
-                      <option value="deepseek-chat">DeepSeek Chat</option>
-                      <option value="deepseek-coder">DeepSeek Coder</option>
-                      <option value="deepseek-reasoner">DeepSeek Reasoner</option>
+                      <optgroup label="💰 Cost-Effective (Recommended for Cold Email)">
+                        <option value="gpt-3.5-turbo">GPT-3.5 Turbo (Default)</option>
+                        <option value="gpt-3.5-turbo-16k">GPT-3.5 Turbo 16K</option>
+                        <option value="gpt-4o-mini">GPT-4o Mini</option>
+                      </optgroup>
+                      <optgroup label="🚀 Next Generation (GPT-5 Series)">
+                        <option value="gpt-5">GPT-5</option>
+                        <option value="gpt-5-turbo">GPT-5 Turbo</option>
+                        <option value="gpt-5-mini">GPT-5 Mini</option>
+                      </optgroup>
+                      <optgroup label="🧠 Advanced Reasoning">
+                        <option value="o1">o1</option>
+                        <option value="o1-mini">o1-mini</option>
+                        <option value="o1-preview">o1-preview</option>
+                      </optgroup>
+                      <optgroup label="⚡ High Performance">
+                        <option value="gpt-4o">GPT-4o</option>
+                        <option value="gpt-4-turbo">GPT-4 Turbo</option>
+                        <option value="gpt-4-turbo-preview">GPT-4 Turbo Preview</option>
+                        <option value="gpt-4">GPT-4</option>
+                      </optgroup>
+                      <optgroup label="📝 Text Optimization">
+                        <option value="text-davinci-003">Text Davinci 003</option>
+                        <option value="text-curie-001">Text Curie 001</option>
+                        <option value="text-babbage-001">Text Babbage 001</option>
+                        <option value="text-ada-001">Text Ada 001</option>
+                      </optgroup>
                     </select>
                   </div>
                 </div>
@@ -393,7 +300,7 @@ export default function DashboardPage() {
                 disabled={isSaving}
                 className="w-full"
               >
-                {isSaving ? 'Saving...' : 'Save AI Settings'}
+                {isSaving ? 'Saving...' : 'Save Open AI Settings'}
               </Button>
 
               {/* Status Message */}
@@ -430,19 +337,19 @@ export default function DashboardPage() {
                   <span className="text-gray-600">Monthly Limit:</span>
                   <span className="font-medium">{user.emailsLimit.toLocaleString()}</span>
                 </div>
-                {aiProvider && (
+                {openaiModel && (
                   <div className="flex justify-between">
-                    <span className="text-gray-600">Active AI:</span>
+                    <span className="text-gray-600">AI Model:</span>
                     <span className="font-medium capitalize">
-                      {aiProvider} ({aiProvider === 'openai' ? openaiModel : deepseekModel})
+                      {openaiModel}
                     </span>
                   </div>
                 )}
-                {(openaiApiKey || deepseekApiKey) && (
+                {openaiApiKey && (
                   <div className="flex justify-between">
-                    <span className="text-gray-600">Configured:</span>
-                    <span className="font-medium text-sm">
-                      {openaiApiKey && 'OpenAI'}{openaiApiKey && deepseekApiKey && ' + '}{deepseekApiKey && 'DeepSeek'}
+                    <span className="text-gray-600">OpenAI:</span>
+                    <span className="font-medium text-sm text-green-600">
+                      Configured
                     </span>
                   </div>
                 )}

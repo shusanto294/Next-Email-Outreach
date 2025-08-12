@@ -67,21 +67,135 @@ def get_scheduled_contacts():
     return all_scheduled_contacts
 
 
+def reset_daily_counts_if_needed():
+    """Reset sentToday to 0 for all email accounts if date has changed"""
+    try:
+        from datetime import date
+        today = date.today()
+        
+        # Find email accounts that need daily reset
+        email_accounts = email_accounts_collection.find({
+            '$or': [
+                {'lastResetDate': {'$exists': False}},
+                {'lastResetDate': {'$lt': datetime.combine(today, datetime.min.time())}}
+            ]
+        })
+        
+        reset_count = 0
+        for account in email_accounts:
+            result = email_accounts_collection.update_one(
+                {'_id': account['_id']},
+                {
+                    '$set': {
+                        'sentToday': 0,
+                        'lastResetDate': datetime.combine(today, datetime.min.time())
+                    }
+                }
+            )
+            if result.modified_count > 0:
+                reset_count += 1
+        
+        if reset_count > 0:
+            print(f"🔄 Reset daily sent counts for {reset_count} email account(s)")
+        
+        return reset_count
+        
+    except Exception as e:
+        print(f"❌ Error resetting daily counts: {e}")
+        return 0
+
+
 def get_next_email_account(campaign):
-    """Get the next email account to use for this campaign (simple rotation)"""
+    """Get the next email account to use for this campaign (simple rotation) with daily limit check"""
     email_account_ids = campaign.get('emailAccountIds', [])
     if not email_account_ids:
         return None, 0
     
-    # Simple rotation - use timestamp-based selection for basic rotation
-    import random
-    selected_index = random.randint(0, len(email_account_ids) - 1)
-    selected_email_account_id = email_account_ids[selected_index]
+    # Reset daily counts if needed
+    reset_daily_counts_if_needed()
     
-    # Get email account details
-    email_account = email_accounts_collection.find_one({'_id': selected_email_account_id})
+    # Find an email account that hasn't reached its daily limit
+    for attempt in range(len(email_account_ids)):
+        # Simple rotation - use timestamp-based selection for basic rotation
+        import random
+        selected_index = random.randint(0, len(email_account_ids) - 1)
+        selected_email_account_id = email_account_ids[selected_index]
+        
+        # Get email account details
+        email_account = email_accounts_collection.find_one({'_id': selected_email_account_id})
+        
+        if email_account:
+            sent_today = email_account.get('sentToday', 0)
+            daily_limit = email_account.get('dailyLimit', 50)
+            
+            if sent_today < daily_limit:
+                print(f"📊 Selected account {email_account.get('email')} - Sent today: {sent_today}/{daily_limit}")
+                return email_account, selected_index
+            else:
+                print(f"⚠️  Account {email_account.get('email')} reached daily limit: {sent_today}/{daily_limit}")
     
-    return email_account, selected_index
+    # If we reach here, all accounts have reached their daily limit
+    print("❌ All email accounts have reached their daily limit")
+    return None, 0
+
+
+def increment_email_account_sent_count(email_account_id):
+    """Increment the sentToday count for an email account after sending an email"""
+    try:
+        result = email_accounts_collection.update_one(
+            {'_id': email_account_id},
+            {
+                '$inc': {'sentToday': 1},
+                '$set': {'lastUsed': datetime.now()}
+            }
+        )
+        
+        if result.modified_count > 0:
+            # Get updated count for logging
+            updated_account = email_accounts_collection.find_one({'_id': email_account_id})
+            sent_today = updated_account.get('sentToday', 0) if updated_account else 0
+            daily_limit = updated_account.get('dailyLimit', 50) if updated_account else 50
+            email = updated_account.get('email', 'Unknown') if updated_account else 'Unknown'
+            
+            print(f"📊 Updated email account {email} sent count: {sent_today}/{daily_limit}")
+            return True
+        else:
+            print(f"⚠️  Failed to increment sent count for email account")
+            return False
+        
+    except Exception as e:
+        print(f"❌ Error incrementing email account sent count: {e}")
+        return False
+
+
+def check_any_accounts_available():
+    """Check if any email accounts are available (haven't reached daily limit) across all campaigns"""
+    try:
+        # Reset daily counts if needed first
+        reset_daily_counts_if_needed()
+        
+        # Find all email accounts and check if any are under their daily limit
+        available_count = email_accounts_collection.count_documents({
+            'isActive': True,
+            '$expr': {
+                '$lt': [
+                    {'$ifNull': ['$sentToday', 0]},
+                    '$dailyLimit'
+                ]
+            }
+        })
+        
+        if available_count == 0:
+            print("🚫 ALL email accounts have reached their daily limits!")
+            print("⏰ Email sending will resume tomorrow when daily limits reset.")
+            return False
+        else:
+            print(f"✅ {available_count} email account(s) still available for sending")
+            return True
+            
+    except Exception as e:
+        print(f"❌ Error checking available accounts: {e}")
+        return False
 
 
 # ============================================================================
@@ -484,6 +598,13 @@ def main():
     
     while True:
         try:
+            # First check if any email accounts are available before processing contacts
+            if not check_any_accounts_available():
+                print("💤 No email accounts available for sending. Waiting for daily limit reset...")
+                print(f"⏱️  Waiting {wait_time} seconds before checking again...")
+                time.sleep(wait_time)
+                continue
+            
             contacts = get_scheduled_contacts()
             
             if contacts:
@@ -514,8 +635,15 @@ def main():
                                 print(f"Email Account Name: {email_account.get('name', 'No name')}")
                                 print(f"Selected account index: {selected_index}")
                             else:
-                                print("No email accounts found for this campaign")
-                                continue
+                                print("⚠️  No available email accounts for this campaign (all may have reached daily limits)")
+                                # Check if ANY accounts are available across all campaigns
+                                if not check_any_accounts_available():
+                                    print("🚫 All email accounts across ALL campaigns have reached their daily limits!")
+                                    print("⏰ Stopping email processing until tomorrow when limits reset.")
+                                    break  # Break out of the contacts loop
+                                else:
+                                    print("📤 Some accounts may still be available for other campaigns, continuing...")
+                                    continue
                             
                             # Show sequences and send emails
                             if 'sequences' in campaign:
@@ -573,18 +701,22 @@ def main():
                                     active_sequence = None
                                 
                                 # Update sent counts and contact schedule after successful email sending
-                                if email_sent and active_sequence:
+                                if email_sent and active_sequence and email_account:
                                     contact_id = contact.get('_id')
                                     campaign_id = contact.get('campaign_id')
+                                    email_account_id = email_account.get('_id')
                                     
-                                    if contact_id and campaign_id:
+                                    if contact_id and campaign_id and email_account_id:
                                         # Update sent counts for both contact and campaign
                                         update_sent_counts(contact_id, campaign_id)
+                                        
+                                        # Increment email account sent count
+                                        increment_email_account_sent_count(email_account_id)
                                         
                                         # Update contact schedule based on sequence nextEmailAfter setting
                                         update_contact_schedule(contact_id, active_sequence, contact_sent_count, total_sequences)
                                     else:
-                                        print("⚠️  Warning: Contact ID or Campaign ID not found, cannot update counts/schedule")
+                                        print("⚠️  Warning: Contact ID, Campaign ID, or Email Account ID not found, cannot update counts/schedule")
                                     
                                     # Apply delay between emails based on campaign settings
                                     email_delay_seconds = campaign.get('schedule', {}).get('emailDelaySeconds', 60)
