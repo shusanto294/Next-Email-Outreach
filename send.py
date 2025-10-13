@@ -1,12 +1,18 @@
 import os
+import sys
 import time
+import re
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from pymongo import MongoClient
 from bson import ObjectId
 import pytz
+from openai import OpenAI
 
-wait_time = 1
+# Force unbuffered output
+sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', buffering=1)
+
+wait_time = 60  # Wait 60 seconds between cycles
 
 load_dotenv('.env.local')
 
@@ -20,735 +26,419 @@ contacts_collection = db['contacts']
 campaigns_collection = db['campaigns']
 email_accounts_collection = db['emailaccounts']
 users_collection = db['users']
+sent_emails_collection = db['sentemails']
 
-def get_scheduled_contacts():
-    """Retrieve contacts scheduled for today or earlier from active campaigns"""
-    now = datetime.now()
-    
-    # Find all active campaigns
-    active_campaigns = list(campaigns_collection.find({'isActive': True}))
-    
-    if not active_campaigns:
-        print("No active campaigns found")
-        return []
-    
-    all_scheduled_contacts = []
-    
-    for campaign in active_campaigns:
-        print(f"Processing campaign: {campaign.get('name', 'Unnamed')}")
-        
-        # Get contactIds from this campaign
-        contact_ids = campaign.get('contactIds', [])
-        
-        if not contact_ids:
-            print(f"  No contacts in campaign: {campaign.get('name', 'Unnamed')}")
-            continue
-        
-        # Find scheduled contacts that are in this campaign's contactIds and have upcoming sequences
-        query = {
-            '_id': {'$in': contact_ids},
-            'schedule': {'$lte': now},
-            'status': 'active',
-            'hasUpcomingSequence': True
-        }
-        
-        campaign_contacts = list(contacts_collection.find(query).limit(1))
-        
-        if campaign_contacts:
-            print(f"  Found {len(campaign_contacts)} scheduled contact(s) in campaign: {campaign.get('name', 'Unnamed')}")
-            # Add campaign info to each contact
-            for contact in campaign_contacts:
-                contact['campaign_name'] = campaign.get('name', 'Unnamed')
-                contact['campaign_id'] = campaign.get('_id')
-            all_scheduled_contacts.extend(campaign_contacts)
+
+def replace_variables(text, contact, email_account):
+    """Replace variables in text with contact information"""
+    if not text:
+        return text
+
+    replacements = {
+        '{{firstName}}': contact.get('firstName', ''),
+        '{{lastName}}': contact.get('lastName', ''),
+        '{{company}}': contact.get('company', ''),
+        '{{position}}': contact.get('position', ''),
+        '{{phone}}': contact.get('phone', ''),
+        '{{website}}': contact.get('website', ''),
+        '{{linkedin}}': contact.get('linkedin', ''),
+        '{{email}}': contact.get('email', ''),
+        '{{fromName}}': email_account.get('fromName', email_account.get('email', '')),
+    }
+
+    result = text
+    for variable, value in replacements.items():
+        result = result.replace(variable, str(value) if value else '')
+
+    return result
+
+
+def generate_with_ai(openai_api_key, prompt, contact, email_account, is_subject=False):
+    """Generate personalized email content using OpenAI"""
+    try:
+        client = OpenAI(api_key=openai_api_key)
+
+        # Build contact information context
+        contact_info = []
+        if contact.get('firstName'):
+            contact_info.append(f"First Name: {contact['firstName']}")
+        if contact.get('lastName'):
+            contact_info.append(f"Last Name: {contact['lastName']}")
+        if contact.get('company'):
+            contact_info.append(f"Company: {contact['company']}")
+        if contact.get('position'):
+            contact_info.append(f"Position: {contact['position']}")
+        if contact.get('phone'):
+            contact_info.append(f"Phone: {contact['phone']}")
+        if contact.get('website'):
+            contact_info.append(f"Website: {contact['website']}")
+        if contact.get('linkedin'):
+            contact_info.append(f"LinkedIn: {contact['linkedin']}")
+        if contact.get('email'):
+            contact_info.append(f"Email: {contact['email']}")
+
+        # Add custom fields if available
+        if contact.get('city'):
+            contact_info.append(f"City: {contact['city']}")
+        if contact.get('state'):
+            contact_info.append(f"State: {contact['state']}")
+        if contact.get('country'):
+            contact_info.append(f"Country: {contact['country']}")
+        if contact.get('industry'):
+            contact_info.append(f"Industry: {contact['industry']}")
+
+        contact_context = "\n".join(contact_info)
+
+        # Get sender name
+        from_name = email_account.get('fromName', email_account.get('email', 'Sales Team'))
+
+        if is_subject:
+            system_message = f"""You are an expert email marketer writing subject lines for cold emails.
+Generate a compelling, personalized subject line based on the prompt and contact information.
+
+IMPORTANT RULES:
+- Keep it under 60 characters
+- Make it personal and relevant to the contact
+- Do NOT use brackets or special formatting
+- Do NOT include "Subject:" prefix
+- Return ONLY the subject line, nothing else"""
+
+            user_message = f"""Contact Information:
+{contact_context}
+
+Prompt: {prompt}
+
+Generate a personalized subject line for this contact:"""
         else:
-            print(f"  No scheduled contacts found in campaign: {campaign.get('name', 'Unnamed')}")
-    
-    return all_scheduled_contacts
+            system_message = f"""You are an expert email marketer writing personalized cold emails.
+Generate a professional, personalized email body based on the prompt and contact information.
 
+IMPORTANT RULES:
+- Use the contact's first name if available
+- Reference their company, position, or other relevant details
+- Keep it concise and professional
+- Sign off with the sender's name: {from_name}
+- Do NOT include subject line
+- Return ONLY the email body"""
 
-def reset_daily_counts_if_needed():
-    """Reset sentToday to 0 for all email accounts if date has changed"""
-    try:
-        from datetime import date
-        today = date.today()
-        
-        # Find email accounts that need daily reset
-        email_accounts = email_accounts_collection.find({
-            '$or': [
-                {'lastResetDate': {'$exists': False}},
-                {'lastResetDate': {'$lt': datetime.combine(today, datetime.min.time())}}
-            ]
-        })
-        
-        reset_count = 0
-        for account in email_accounts:
-            result = email_accounts_collection.update_one(
-                {'_id': account['_id']},
-                {
-                    '$set': {
-                        'sentToday': 0,
-                        'lastResetDate': datetime.combine(today, datetime.min.time())
-                    }
-                }
-            )
-            if result.modified_count > 0:
-                reset_count += 1
-        
-        if reset_count > 0:
-            print(f"🔄 Reset daily sent counts for {reset_count} email account(s)")
-        
-        return reset_count
-        
-    except Exception as e:
-        print(f"❌ Error resetting daily counts: {e}")
-        return 0
+            user_message = f"""Contact Information:
+{contact_context}
 
+Sender Name: {from_name}
 
-def get_next_email_account(campaign):
-    """Get the next email account to use for this campaign (simple rotation) with daily limit check"""
-    email_account_ids = campaign.get('emailAccountIds', [])
-    if not email_account_ids:
-        return None, 0
-    
-    # Reset daily counts if needed
-    reset_daily_counts_if_needed()
-    
-    # Find an email account that hasn't reached its daily limit
-    for attempt in range(len(email_account_ids)):
-        # Simple rotation - use timestamp-based selection for basic rotation
-        import random
-        selected_index = random.randint(0, len(email_account_ids) - 1)
-        selected_email_account_id = email_account_ids[selected_index]
-        
-        # Get email account details
-        email_account = email_accounts_collection.find_one({'_id': selected_email_account_id})
-        
-        if email_account:
-            sent_today = email_account.get('sentToday', 0)
-            daily_limit = email_account.get('dailyLimit', 50)
-            
-            if sent_today < daily_limit:
-                print(f"📊 Selected account {email_account.get('email')} - Sent today: {sent_today}/{daily_limit}")
-                return email_account, selected_index
-            else:
-                print(f"⚠️  Account {email_account.get('email')} reached daily limit: {sent_today}/{daily_limit}")
-    
-    # If we reach here, all accounts have reached their daily limit
-    print("❌ All email accounts have reached their daily limit")
-    return None, 0
+Prompt: {prompt}
 
+Generate a personalized email body for this contact:"""
 
-def increment_email_account_sent_count(email_account_id):
-    """Increment the sentToday count for an email account after sending an email"""
-    try:
-        result = email_accounts_collection.update_one(
-            {'_id': email_account_id},
-            {
-                '$inc': {'sentToday': 1},
-                '$set': {'lastUsed': datetime.now()}
-            }
+        print(f"\n🤖 Generating with AI...")
+        print(f"   Contact: {contact.get('firstName', '')} {contact.get('lastName', '')} from {contact.get('company', 'Unknown')}")
+
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": user_message}
+            ],
+            temperature=0.7,
+            max_tokens=500 if is_subject else 1000,
         )
-        
-        if result.modified_count > 0:
-            # Get updated count for logging
-            updated_account = email_accounts_collection.find_one({'_id': email_account_id})
-            sent_today = updated_account.get('sentToday', 0) if updated_account else 0
-            daily_limit = updated_account.get('dailyLimit', 50) if updated_account else 50
-            email = updated_account.get('email', 'Unknown') if updated_account else 'Unknown'
-            
-            print(f"📊 Updated email account {email} sent count: {sent_today}/{daily_limit}")
-            return True
-        else:
-            print(f"⚠️  Failed to increment sent count for email account")
-            return False
-        
+
+        generated_text = response.choices[0].message.content.strip()
+
+        # Clean up the generated text
+        if is_subject:
+            # Remove any "Subject:" prefix if present
+            generated_text = re.sub(r'^subject:\s*', '', generated_text, flags=re.IGNORECASE)
+            # Remove quotes if present
+            generated_text = generated_text.strip('"\'')
+
+        print(f"   ✅ Generated {'subject' if is_subject else 'content'}: {generated_text[:50]}...")
+
+        return generated_text
+
     except Exception as e:
-        print(f"❌ Error incrementing email account sent count: {e}")
-        return False
+        print(f"   ❌ AI generation failed: {e}")
+        return None
 
 
-def check_any_accounts_available():
-    """Check if any email accounts are available (haven't reached daily limit) across all campaigns"""
+# Continuous loop to process campaigns
+print("🚀 Starting continuous email campaign processor...")
+print(f"⏱️  Checking for active campaigns every {wait_time} seconds")
+print("Press Ctrl+C to stop\n")
+
+cycle_count = 0
+
+while True:
     try:
-        # Reset daily counts if needed first
-        reset_daily_counts_if_needed()
-        
-        # Find all email accounts and check if any are under their daily limit
-        available_count = email_accounts_collection.count_documents({
-            'isActive': True,
-            '$expr': {
-                '$lt': [
-                    {'$ifNull': ['$sentToday', 0]},
-                    '$dailyLimit'
-                ]
-            }
-        })
-        
-        if available_count == 0:
-            print("🚫 ALL email accounts have reached their daily limits!")
-            print("⏰ Email sending will resume tomorrow when daily limits reset.")
-            return False
-        else:
-            print(f"✅ {available_count} email account(s) still available for sending")
-            return True
-            
-    except Exception as e:
-        print(f"❌ Error checking available accounts: {e}")
-        return False
+        cycle_count += 1
+        print(f"\n{'='*60}")
+        print(f"🔄 CYCLE #{cycle_count} - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"{'='*60}")
+
+        # Loop through all active campaigns
+        active_campaigns = campaigns_collection.find({"isActive": True})
+        campaign_count = 0
+
+        for campaign in active_campaigns:
+            campaign_count += 1
+            print(f"\n📋 Processing Campaign #{campaign_count}: {campaign.get('name', 'Unnamed')}")
+            # Get the user id
+            user_id = campaign.get('userId')
+
+            # Query the user from the users table
+            user = users_collection.find_one({"_id": ObjectId(user_id)})
+
+            # Get timezone for schedule check
+            if user:
+                timezone = user.get('timezone', 'UTC')
+            else:
+                timezone = 'UTC'
+
+            # Get schedule settings from campaign
+            schedule = campaign.get('schedule', {})
+            sending_hours = schedule.get('sendingHours', {})
+            start_time = sending_hours.get('start', '09:00')  # Default 09:00
+            end_time = sending_hours.get('end', '17:00')  # Default 17:00
+            sending_days = schedule.get('sendingDays', [0, 1, 2, 3, 4])  # Default Mon-Fri (0=Sunday, 6=Saturday)
 
 
-# ============================================================================
-# SCHEDULE VALIDATION FUNCTION
-# ============================================================================
-def can_send_email_now(campaign):
-    """
-    Check if emails can be sent now based on campaign schedule and user timezone
-    
-    Args:
-        campaign (dict): Campaign document with schedule settings and userId
-        
-    Returns:
-        tuple: (can_send: bool, reason: str)
-    """
-    try:
-        # Get user information for timezone using campaign owner userId
-        user_id = campaign.get('userId')
-        if isinstance(user_id, str):
+            # Get current time in user's timezone and check schedule FIRST
+            can_send = False
             try:
-                user_id = ObjectId(user_id)
-            except Exception:
-                pass
-        user = users_collection.find_one({'_id': user_id})
-        if not user:
-            return False, "User not found"
-        
-        # Get user timezone (default to UTC if not set)
-        user_timezone = user.get('timezone', 'UTC')
-        try:
-            tz = pytz.timezone(user_timezone)
-        except pytz.exceptions.UnknownTimeZoneError:
-            print(f"⚠️  Unknown timezone '{user_timezone}', using UTC")
-            tz = pytz.UTC
-        
-        # Get current time in user's timezone
-        current_time_utc = datetime.now(pytz.UTC)
-        current_time_user = current_time_utc.astimezone(tz)
-        
-        print(f"🌍 User timezone: {user_timezone}")
-        print(f"🕐 Current time (user timezone): {current_time_user.strftime('%Y-%m-%d %H:%M:%S %Z')}")
-        
-        # Get schedule settings from campaign
-        schedule = campaign.get('schedule', {})
-        sending_hours = schedule.get('sendingHours', {})
-        sending_days = schedule.get('sendingDays', [0, 1, 2, 3, 4, 5, 6])  # Default: all days
-        
-        # Parse sending hours
-        start_hour_str = sending_hours.get('start', '09:00')
-        end_hour_str = sending_hours.get('end', '17:00')
-        
-        start_hour = datetime.strptime(start_hour_str, '%H:%M').time()
-        end_hour = datetime.strptime(end_hour_str, '%H:%M').time()
-        
-        print(f"📅 Allowed sending hours: {start_hour_str} - {end_hour_str}")
-        print(f"📅 Allowed sending days: {sending_days}")
-        
-        # Determine if the window crosses midnight (overnight window)
-        is_overnight_window = start_hour > end_hour
+                user_tz = pytz.timezone(timezone)
+                current_time_utc = datetime.now(pytz.UTC)
+                current_time_user = current_time_utc.astimezone(user_tz)
 
-        # Determine effective weekday when in an overnight window and before end_hour
-        current_time_only = current_time_user.time()
-        if is_overnight_window and current_time_only <= end_hour:
-            # For times after midnight and before end time, treat as previous day's sending window
-            effective_weekday = (current_time_user - timedelta(days=1)).weekday()
-        else:
-            effective_weekday = current_time_user.weekday()
+                # Check if current day is in sending days
+                current_day = current_time_user.weekday()
+                # Convert Python weekday (0=Monday) to campaign weekday (0=Sunday)
+                # Python: Mon=0, Tue=1, Wed=2, Thu=3, Fri=4, Sat=5, Sun=6
+                # Campaign: Sun=0, Mon=1, Tue=2, Wed=3, Thu=4, Fri=5, Sat=6
+                campaign_weekday = (current_day + 1) % 7
 
-        # Check if effective day is allowed (0=Monday, 6=Sunday)
-        if effective_weekday not in sending_days:
-            return False, (
-                f"Today is not a sending day. Current (effective): {effective_weekday}, Allowed: {sending_days}"
-            )
-
-        # Check if current time is within sending hours, supporting overnight ranges
-        if not is_overnight_window:
-            in_window = start_hour <= current_time_only <= end_hour
-        else:
-            # Overnight: allowed if after start or before end (e.g., 21:00-05:00)
-            in_window = (current_time_only >= start_hour) or (current_time_only <= end_hour)
-
-        if not in_window:
-            window_desc = f"{start_hour_str}-{end_hour_str}"
-            return False, (
-                f"Current time {current_time_only.strftime('%H:%M')} is outside sending hours {window_desc}"
-            )
-        
-        return True, "Schedule check passed"
-        
-    except Exception as e:
-        print(f"❌ Error checking schedule: {e}")
-        return False, f"Schedule check error: {e}"
+                is_valid_day = campaign_weekday in sending_days
 
 
-# ============================================================================
-# EMAIL SENDING FUNCTION
-# ============================================================================
-def send_email(sender_email, receiver_email, subject, body):
-    """
-    Send email function - currently just prints email details for testing
-    
-    Args:
-        sender_email (str): Email address of the sender
-        receiver_email (str): Email address of the receiver
-        subject (str): Email subject line
-        body (str): Email body content
-    
-    Returns:
-        bool: True if email was "sent" successfully
-    """
-    print(f"\n" + "="*60)
-    print(f"📧 SENDING EMAIL")
-    print(f"="*60)
-    print(f"From: {sender_email}")
-    print(f"To: {receiver_email}")
-    print(f"Subject: {subject}")
-    print(f"\nBody:")
-    print(f"-"*40)
-    print(f"{body}")
-    print(f"-"*40)
-    print(f"✅ Email sent successfully!")
-    print(f"="*60)
-    
-    # Here you can add actual email sending logic later
-    # For example: SMTP, SendGrid, Amazon SES, etc.
-    
-    return True
+                # Check if current time is within sending hours
+                current_time_str = current_time_user.strftime('%H:%M')
 
-
-# ============================================================================
-# UPDATE SENT COUNTS FUNCTION
-# ============================================================================
-def update_sent_counts(contact_id, campaign_id):
-    """
-    Update sent email counts for both contact and campaign after sending email
-    
-    Args:
-        contact_id (ObjectId): Contact ID to update
-        campaign_id (ObjectId): Campaign ID to update
-    
-    Returns:
-        bool: True if updates were successful
-    """
-    try:
-        # Update contact timesContacted count
-        contact_result = contacts_collection.update_one(
-            {'_id': contact_id},
-            {
-                '$inc': {'timesContacted': 1},
-                '$set': {'lastContacted': datetime.now()}
-            }
-        )
-        
-        # Update campaign stats.sent count
-        campaign_result = campaigns_collection.update_one(
-            {'_id': campaign_id},
-            {'$inc': {'stats.sent': 1}}
-        )
-        
-        print(f"📊 Updated sent counts:")
-        print(f"   Contact times contacted: +1")
-        print(f"   Campaign sent count: +1")
-        
-        return contact_result.modified_count > 0 and campaign_result.modified_count > 0
-        
-    except Exception as e:
-        print(f"❌ Error updating sent counts: {e}")
-        return False
-
-
-# ============================================================================
-# CONTACT SCHEDULE UPDATE FUNCTION
-# ============================================================================
-def update_contact_schedule(contact_id, sequence, contact_sent_count, total_sequences):
-    """
-    Update contact's schedule based on the sequence's nextEmailAfter setting
-    and set hasUpcomingSequence based on remaining sequences
-    
-    Args:
-        contact_id (ObjectId): Contact ID to update
-        sequence (dict): Email sequence containing nextEmailAfter value
-        contact_sent_count (int): Current number of emails sent to contact
-        total_sequences (int): Total number of active sequences in campaign
-    
-    Returns:
-        bool: True if update was successful
-    """
-    try:
-        next_email_after_days = sequence.get('nextEmailAfter', 1)  # Default to 1 day
-        
-        # Calculate new schedule date
-        current_time = datetime.now()
-        new_schedule = current_time + timedelta(days=next_email_after_days)
-        
-        # Check if there are more sequences after this one
-        # contact_sent_count will be incremented after this, so check if there are sequences beyond that
-        has_upcoming_sequence = (contact_sent_count + 1) < total_sequences
-        
-        # Update the contact's schedule and hasUpcomingSequence in database
-        update_data = {'$set': {'schedule': new_schedule, 'hasUpcomingSequence': has_upcoming_sequence}}
-        
-        result = contacts_collection.update_one(
-            {'_id': contact_id},
-            update_data
-        )
-        
-        print(f"📅 Updated contact schedule:")
-        print(f"   Contact ID: {contact_id}")
-        print(f"   Next email after: {next_email_after_days} days")
-        print(f"   New schedule: {new_schedule.strftime('%Y-%m-%d %H:%M:%S')}")
-        print(f"   Has upcoming sequence: {has_upcoming_sequence}")
-        print(f"   Contact sent count (after this): {contact_sent_count + 1}")
-        print(f"   Total sequences: {total_sequences}")
-        
-        return result.modified_count > 0
-        
-    except Exception as e:
-        print(f"❌ Error updating contact schedule: {e}")
-        return False
-
-
-# ============================================================================
-# UPDATE ALL CONTACTS UPCOMING SEQUENCE STATUS
-# ============================================================================
-def update_all_contacts_upcoming_sequence_status(campaign_id):
-    """
-    Update hasUpcomingSequence for all contacts in a campaign based on available sequences
-    
-    Args:
-        campaign_id (ObjectId): Campaign ID to update contacts for
-    
-    Returns:
-        int: Number of contacts updated
-    """
-    try:
-        # Get campaign with sequences
-        campaign = campaigns_collection.find_one({'_id': campaign_id})
-        if not campaign:
-            print(f"❌ Campaign not found: {campaign_id}")
-            return 0
-        
-        # Get active sequences count
-        active_sequences = [seq for seq in campaign.get('sequences', []) if seq.get('isActive', True)]
-        total_sequences = len(active_sequences)
-        
-        print(f"🔄 Updating hasUpcomingSequence for all contacts in campaign")
-        print(f"   Campaign has {total_sequences} active sequences")
-        
-        # Get all contacts for this campaign
-        contacts = list(contacts_collection.find({'campaignId': campaign_id}))
-        
-        updated_count = 0
-        for contact in contacts:
-            contact_sent_count = contact.get('timesContacted', 0)
-            has_upcoming_sequence = contact_sent_count < total_sequences
-            
-            # Update contact's hasUpcomingSequence status
-            result = contacts_collection.update_one(
-                {'_id': contact['_id']},
-                {'$set': {'hasUpcomingSequence': has_upcoming_sequence}}
-            )
-            
-            if result.modified_count > 0:
-                updated_count += 1
-        
-        print(f"✅ Updated {updated_count} contacts with upcoming sequence status")
-        return updated_count
-        
-    except Exception as e:
-        print(f"❌ Error updating contacts upcoming sequence status: {e}")
-        return 0
-
-
-# ============================================================================
-# SET ALL CONTACTS UPCOMING SEQUENCE TO TRUE
-# ============================================================================
-def set_all_contacts_upcoming_sequence_true(campaign_id):
-    """
-    Set hasUpcomingSequence to true for all contacts in a campaign
-    (called when sequences are added/updated)
-    
-    Args:
-        campaign_id (ObjectId): Campaign ID to update contacts for
-    
-    Returns:
-        int: Number of contacts updated
-    """
-    try:
-        print(f"🔄 Setting hasUpcomingSequence=true for all contacts in campaign")
-        
-        # Update all contacts in this campaign to have upcoming sequences
-        result = contacts_collection.update_many(
-            {'campaignId': campaign_id},
-            {'$set': {'hasUpcomingSequence': True}}
-        )
-        
-        print(f"✅ Updated {result.modified_count} contacts to hasUpcomingSequence=true")
-        return result.modified_count
-        
-    except Exception as e:
-        print(f"❌ Error setting contacts upcoming sequence to true: {e}")
-        return 0
-
-
-# ============================================================================
-# UPDATE CONTACT SCHEDULES BASED ON SEQUENCE CHANGES
-# ============================================================================
-def update_contact_schedules_for_sequence_changes(campaign_id):
-    """
-    Recalculate and update contact schedules when sequence nextEmailAfter values change
-    
-    Args:
-        campaign_id (ObjectId): Campaign ID to update contacts for
-    
-    Returns:
-        int: Number of contacts updated
-    """
-    try:
-        print(f"🔄 Recalculating contact schedules based on sequence changes")
-        
-        # Get campaign with sequences
-        campaign = campaigns_collection.find_one({'_id': campaign_id})
-        if not campaign:
-            print(f"❌ Campaign not found: {campaign_id}")
-            return 0
-        
-        # Get active sequences
-        active_sequences = [seq for seq in campaign.get('sequences', []) if seq.get('isActive', True)]
-        total_sequences = len(active_sequences)
-        
-        if total_sequences == 0:
-            print(f"❌ No active sequences found in campaign")
-            return 0
-        
-        print(f"   Campaign has {total_sequences} active sequences")
-        
-        # Get all contacts for this campaign
-        contacts = list(contacts_collection.find({'campaignId': campaign_id}))
-        
-        updated_count = 0
-        current_time = datetime.now()
-        
-        for contact in contacts:
-            contact_sent_count = contact.get('timesContacted', 0)
-            
-            # Skip contacts who haven't been contacted yet (they'll start immediately)
-            if contact_sent_count == 0:
-                continue
-            
-            # Skip contacts who have completed all sequences
-            if contact_sent_count >= total_sequences:
-                continue
-            
-            # Determine which sequence this contact is waiting for next
-            next_sequence_index = contact_sent_count  # 0-based index of next sequence
-            
-            if next_sequence_index < len(active_sequences):
-                next_sequence = active_sequences[next_sequence_index]
-                
-                # Get the nextEmailAfter from the sequence they're waiting for
-                next_email_after_days = next_sequence.get('nextEmailAfter', 7)
-                
-                # Calculate new schedule based on their last contacted date
-                last_contacted = contact.get('lastContacted')
-                if last_contacted:
-                    # Calculate new schedule from their last contacted date
-                    new_schedule = last_contacted + timedelta(days=next_email_after_days)
+                # Handle overnight time ranges (e.g., 17:00 to 09:00)
+                if end_time < start_time:
+                    # Range crosses midnight
+                    is_within_hours = current_time_str >= start_time or current_time_str <= end_time
                 else:
-                    # If no lastContacted, use current time (shouldn't happen but safety check)
-                    new_schedule = current_time + timedelta(days=next_email_after_days)
-                
-                # Update the contact's schedule
-                result = contacts_collection.update_one(
-                    {'_id': contact['_id']},
-                    {'$set': {'schedule': new_schedule}}
-                )
-                
-                if result.modified_count > 0:
-                    updated_count += 1
-                    print(f"   Updated contact {contact.get('email', 'Unknown')}")
-                    print(f"     Times contacted: {contact_sent_count}")
-                    print(f"     Waiting for sequence: {next_sequence_index + 1}")
-                    print(f"     Next email after: {next_email_after_days} days")
-                    print(f"     New schedule: {new_schedule.strftime('%Y-%m-%d %H:%M:%S')}")
-        
-        print(f"✅ Updated schedules for {updated_count} contacts")
-        return updated_count
-        
-    except Exception as e:
-        print(f"❌ Error updating contact schedules for sequence changes: {e}")
-        return 0
+                    # Normal range (e.g., 09:00 to 17:00)
+                    is_within_hours = start_time <= current_time_str <= end_time
 
 
-# ============================================================================
-# MAIN PROGRAM
-# ============================================================================
-def main():
-    """Main loop to continuously retrieve and process scheduled contacts"""
-    print("Starting contact retrieval system...")
-    
-    while True:
-        try:
-            # First check if any email accounts are available before processing contacts
-            if not check_any_accounts_available():
-                print("💤 No email accounts available for sending. Waiting for daily limit reset...")
-                print(f"⏱️  Waiting {wait_time} seconds before checking again...")
-                time.sleep(wait_time)
+                # Final decision
+                can_send = is_valid_day and is_within_hours
+
+                print(f"\n{'✓' if can_send else '✗'} CAN SEND EMAIL: {can_send}")
+                if not can_send:
+                    if not is_valid_day:
+                        print(f"  Reason: Today ({campaign_weekday}) is not in the sending days list")
+                    if not is_within_hours:
+                        print(f"  Reason: Current time ({current_time_str}) is outside sending hours ({start_time}-{end_time})")
+            except Exception as e:
+                print(f"Error checking schedule: {e}")
+                print(f"✗ CAN SEND EMAIL: False (Error occurred)")
+                can_send = False
+
+            # Only proceed if we can send emails
+            if not can_send:
+                print("Skipping campaign - outside sending schedule")
                 continue
-            
-            contacts = get_scheduled_contacts()
-            
-            if contacts:
-                print(f"\nFound {len(contacts)} total scheduled contact(s):")
-                for contact in contacts:
-                    print(f"\nContact: {contact.get('email', 'No email')}")
-                    print(f"Campaign: {contact.get('campaign_name', 'Unknown')}")
-                    
-                    # Get full campaign details to access sequences
-                    campaign_id = contact.get('campaign_id')
-                    if campaign_id:
-                        campaign = campaigns_collection.find_one({'_id': campaign_id})
-                        if campaign:
-                            # Check if we can send emails now based on schedule and timezone
-                            can_send, reason = can_send_email_now(campaign)
-                            print(f"🔍 Schedule check: {reason}")
-                            
-                            if not can_send:
-                                print(f"⏸️  Skipping email sending: {reason}")
-                                continue
-                            
-                            print("✅ Schedule check passed - proceeding with email sending")
-                            
-                            # Get email account for sending
-                            email_account, selected_index = get_next_email_account(campaign)
-                            if email_account:
-                                print(f"Selected Email Account: {email_account.get('email', 'Unknown email')}")
-                                print(f"Email Account Name: {email_account.get('name', 'No name')}")
-                                print(f"Selected account index: {selected_index}")
-                            else:
-                                print("⚠️  No available email accounts for this campaign (all may have reached daily limits)")
-                                # Check if ANY accounts are available across all campaigns
-                                if not check_any_accounts_available():
-                                    print("🚫 All email accounts across ALL campaigns have reached their daily limits!")
-                                    print("⏰ Stopping email processing until tomorrow when limits reset.")
-                                    break  # Break out of the contacts loop
-                                else:
-                                    print("📤 Some accounts may still be available for other campaigns, continuing...")
-                                    continue
-                            
-                            # Show sequences and send emails
-                            if 'sequences' in campaign:
-                                print(f"Sequences in campaign:")
-                                for i, sequence in enumerate(campaign['sequences'], 1):
-                                    print(f"  Sequence {i}:")
-                                    print(f"    Subject: {sequence.get('subject', 'No subject')}")
-                                    print(f"    Content: {sequence.get('content', 'No content')[:100]}{'...' if len(sequence.get('content', '')) > 100 else ''}")
-                                    
-                                    # Print AI prompts if they exist
-                                    if sequence.get('useAiForSubject') and sequence.get('aiSubjectPrompt'):
-                                        print(f"    AI Subject Prompt: {sequence.get('aiSubjectPrompt')}")
-                                    
-                                    if sequence.get('useAiForContent') and sequence.get('aiContentPrompt'):
-                                        print(f"    AI Content Prompt: {sequence.get('aiContentPrompt')}")
-                                    
-                                    print()  # Empty line for better readability
-                                
-                                # Determine which sequence to send based on contact's sent count
-                                contact_sent_count = contact.get('timesContacted', 0)
-                                
-                                # Find the appropriate sequence based on sent count (0-indexed)
-                                # First email = sequence 0, second email = sequence 1, etc.
-                                target_sequence_index = contact_sent_count
-                                
-                                # Get active sequences only
-                                active_sequences = [seq for seq in campaign['sequences'] if seq.get('isActive', True)]
-                                total_sequences = len(active_sequences)
-                                
-                                if target_sequence_index < len(active_sequences) and email_account:
-                                    target_sequence = active_sequences[target_sequence_index]
-                                    
-                                    print(f"📧 Sending sequence #{target_sequence_index + 1} (step {target_sequence.get('stepNumber', 'Unknown')})")
-                                    print(f"   Contact has been contacted {contact_sent_count} times before")
-                                    
-                                    sender_email = email_account.get('email', 'unknown@sender.com')
-                                    receiver_email = contact.get('email', 'unknown@receiver.com')
-                                    subject = target_sequence.get('subject', 'No Subject')
-                                    body = target_sequence.get('content', 'No Content')
-                                    
-                                    # Call send_email function
-                                    email_sent = send_email(sender_email, receiver_email, subject, body)
-                                    
-                                    # Use the target sequence for scheduling (instead of active_sequence)
-                                    active_sequence = target_sequence
-                                elif target_sequence_index >= len(active_sequences):
-                                    print(f"📭 No more sequences to send for this contact")
-                                    print(f"   Contact has been contacted {contact_sent_count} times")
-                                    print(f"   Campaign has {len(active_sequences)} active sequences")
-                                    email_sent = False
-                                    active_sequence = None
-                                else:
-                                    print("❌ No email account available or no sequences found")
-                                    email_sent = False
-                                    active_sequence = None
-                                
-                                # Update sent counts and contact schedule after successful email sending
-                                if email_sent and active_sequence and email_account:
-                                    contact_id = contact.get('_id')
-                                    campaign_id = contact.get('campaign_id')
-                                    email_account_id = email_account.get('_id')
-                                    
-                                    if contact_id and campaign_id and email_account_id:
-                                        # Update sent counts for both contact and campaign
-                                        update_sent_counts(contact_id, campaign_id)
-                                        
-                                        # Increment email account sent count
-                                        increment_email_account_sent_count(email_account_id)
-                                        
-                                        # Update contact schedule based on sequence nextEmailAfter setting
-                                        update_contact_schedule(contact_id, active_sequence, contact_sent_count, total_sequences)
-                                    else:
-                                        print("⚠️  Warning: Contact ID, Campaign ID, or Email Account ID not found, cannot update counts/schedule")
-                                    
-                                    # Apply delay between emails based on campaign settings
-                                    email_delay_seconds = campaign.get('schedule', {}).get('emailDelaySeconds', 60)
-                                    print(f"⏱️  Waiting {email_delay_seconds} seconds before next email (campaign delay setting)...")
-                                    time.sleep(email_delay_seconds)
-                    
-                    print("-" * 50)  # Separator between contacts
-            else:
-                print("No scheduled contacts found in any active campaign")
-            
-            # print(f"Waiting {wait_time} seconds before next check")
-            time.sleep(wait_time)
-            
-        except KeyboardInterrupt:
-            print("\n\n🛑 Script interrupted by user (Ctrl+C)")
-            print("👋 Exiting gracefully...")
-            break
-            
-        except Exception as e:
-            print(f"❌ Error retrieving contacts: {e}")
-            print("🔄 Retrying in 30 seconds...")
-            time.sleep(30)
-    
-    print("✅ Script terminated successfully!")
 
-if __name__ == "__main__":
-    try:
-        main()
+            # Print user details only if we can send
+            print(f"\nUser ID: {user_id}")
+
+            openai_api_key = user.get('openaiApiKey') if user else None
+            print(f"OpenAI API Key: {openai_api_key[:10]}..." if openai_api_key else "OpenAI API Key: Not set")
+
+            # Get send count
+            stats = campaign.get('stats', {})
+            sent = stats.get('sent')
+
+            # Get count of emailAccountIds
+            email_account_ids = campaign.get('emailAccountIds', [])
+            email_account_count = len(email_account_ids)
+
+            # Get the count of contactIds
+            contact_ids = campaign.get('contactIds', [])
+            contact_count = len(contact_ids)
+
+            # Determine current email account index based on sent count (auto-rotation)
+            if email_account_count > 0:
+                current_email_account_index = sent % email_account_count
+                current_email_account_id = email_account_ids[current_email_account_index]
+
+
+                # Query email account details
+                email_account = email_accounts_collection.find_one({"_id": ObjectId(current_email_account_id)})
+                if email_account:
+                    print(f"Email Account to use: {email_account.get('email', 'N/A')}")
+                else:
+                    print("Email account not found in database")
+            else:
+                print("No email accounts available for this campaign")
+                current_email_account_index = None
+                current_email_account_id = None
+
+            # Determine current contact index based on sent count
+            if contact_count > 0:
+                current_contact_index = sent % contact_count
+                current_contact_id = contact_ids[current_contact_index]
+
+                # Query contact details
+                contact = contacts_collection.find_one({"_id": ObjectId(current_contact_id)})
+                if contact:
+                    print(f"Contact Email: {contact.get('email', 'N/A')}")
+                else:
+                    print("Contact not found in database")
+            else:
+                print("No contacts available for this campaign")
+                current_contact_index = None
+                current_contact_id = None
+
+            # Prepare personalized email
+            print("\n📧 EMAIL PERSONALIZATION:")
+            print("=" * 50)
+
+            # Get email fields directly from campaign
+            useAiForSubject = campaign.get('useAiForSubject', False)
+            useAiForContent = campaign.get('useAiForContent', False)
+
+            # Initialize final subject and content
+            final_subject = None
+            final_content = None
+
+            # Process Subject
+            if useAiForSubject:
+                ai_subject_prompt = campaign.get('aiSubjectPrompt', '')
+                print("📝 SUBJECT MODE: AI-Generated")
+                print(f"   Prompt: {ai_subject_prompt[:50]}..." if len(ai_subject_prompt) > 50 else f"   Prompt: {ai_subject_prompt}")
+
+                if openai_api_key and ai_subject_prompt and contact and email_account:
+                    final_subject = generate_with_ai(openai_api_key, ai_subject_prompt, contact, email_account, is_subject=True)
+                    if final_subject:
+                        print(f"   ✅ Generated: {final_subject}")
+                    else:
+                        print(f"   ⚠️ AI generation failed, using prompt as fallback")
+                        final_subject = ai_subject_prompt[:60]  # Fallback to prompt
+                else:
+                    print(f"   ⚠️ Missing API key or data, using prompt as subject")
+                    final_subject = ai_subject_prompt[:60] if ai_subject_prompt else "No Subject"
+            else:
+                subject_template = campaign.get('subject', '')
+                print("📝 SUBJECT MODE: Manual with Variables")
+                print(f"   Template: {subject_template[:50]}..." if len(subject_template) > 50 else f"   Template: {subject_template}")
+
+                if contact and email_account:
+                    final_subject = replace_variables(subject_template, contact, email_account)
+                    print(f"   ✅ Personalized: {final_subject}")
+                else:
+                    final_subject = subject_template if subject_template else "No Subject"
+
+            # Process Content/Body
+            if useAiForContent:
+                ai_content_prompt = campaign.get('aiContentPrompt', '')
+                print("\n📄 CONTENT MODE: AI-Generated")
+                print(f"   Prompt: {ai_content_prompt[:50]}..." if len(ai_content_prompt) > 50 else f"   Prompt: {ai_content_prompt}")
+
+                if openai_api_key and ai_content_prompt and contact and email_account:
+                    final_content = generate_with_ai(openai_api_key, ai_content_prompt, contact, email_account, is_subject=False)
+                    if final_content:
+                        print(f"   ✅ Generated: {final_content[:100]}...")
+                    else:
+                        print(f"   ⚠️ AI generation failed, using prompt as fallback")
+                        final_content = ai_content_prompt
+                else:
+                    print(f"   ⚠️ Missing API key or data, using prompt as content")
+                    final_content = ai_content_prompt if ai_content_prompt else "No content"
+            else:
+                content_template = campaign.get('content', '')
+                print("\n📄 CONTENT MODE: Manual with Variables")
+                print(f"   Template: {content_template[:50]}..." if len(content_template) > 50 else f"   Template: {content_template}")
+
+                if contact and email_account:
+                    final_content = replace_variables(content_template, contact, email_account)
+                    print(f"   ✅ Personalized: {final_content[:100]}...")
+                else:
+                    final_content = content_template if content_template else "No content"
+
+            print("=" * 50)
+
+
+            # Send the actual email (placeholder - implement actual sending logic here)
+            print("\n🚀 SENDING EMAIL...")
+
+            # Store the sent email in the database BEFORE incrementing count
+            try:
+                # Get email account details for 'from' field
+                from_email = email_account.get('email', 'N/A') if email_account else 'N/A'
+                to_email = contact.get('email', 'N/A') if contact else 'N/A'
+
+                # Prepare email document with PERSONALIZED content
+                sent_email_doc = {
+                    "userId": user_id,
+                    "campaignId": campaign["_id"],
+                    "emailAccountId": current_email_account_id if current_email_account_id else None,
+                    "contactId": current_contact_id if current_contact_id else None,
+                    "from": from_email,
+                    "to": to_email,
+                    "subject": final_subject,  # Use personalized subject
+                    "content": final_content,  # Use personalized content
+                    "status": "sent",  # Will be updated to 'delivered' by email provider callback
+                    "sentAt": datetime.now(),
+                    "wasAiGenerated": useAiForSubject or useAiForContent,
+                    "aiGeneratedSubject": useAiForSubject,
+                    "aiGeneratedContent": useAiForContent,
+                    "opened": False,
+                    "clicked": False,
+                    "createdAt": datetime.now(),
+                    "updatedAt": datetime.now(),
+                }
+
+                # Insert the sent email document
+                result = sent_emails_collection.insert_one(sent_email_doc)
+                sent_email_id = result.inserted_id
+
+                print(f"\n✅ Email stored in database with ID: {sent_email_id}")
+                print(f"   From: {from_email}")
+                print(f"   To: {to_email}")
+                print(f"   Subject: {final_subject[:80]}..." if len(final_subject) > 80 else f"   Subject: {final_subject}")
+                print(f"   Content Preview: {final_content[:100]}..." if len(final_content) > 100 else f"   Content: {final_content}")
+
+            except Exception as e:
+                print(f"❌ Error storing sent email in database: {e}")
+                # Continue even if database storage fails
+
+            # Increment the sent count
+            new_sent_count = sent + 1
+            campaigns_collection.update_one(
+                {"_id": campaign["_id"]},
+                {"$set": {"stats.sent": new_sent_count}}
+            )
+            print(f"\n📊 Sent count updated: {sent} -> {new_sent_count}")
+
+            print("-" * 50)
+
+        # End of campaign loop
+        if campaign_count == 0:
+            print("\n⚠️  No active campaigns found")
+
+        print(f"\n✅ Cycle #{cycle_count} completed - Processed {campaign_count} campaigns")
+        print(f"⏱️  Waiting {wait_time} seconds before next cycle...")
+        time.sleep(wait_time)
+
     except KeyboardInterrupt:
-        print("\n\n🛑 Script interrupted by user (Ctrl+C)")
-        print("👋 Goodbye!")
+        print("\n\n⛔ Stopped by user (Ctrl+C)")
+        print("👋 Shutting down email campaign processor...")
+        break
     except Exception as e:
-        print(f"💥 Fatal error: {e}")
-        print("❌ Script terminated with error!")
+        print(f"\n❌ Error in cycle #{cycle_count}: {e}")
+        print(f"⏱️  Waiting {wait_time} seconds before retrying...")
+        time.sleep(wait_time)
+
 

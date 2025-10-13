@@ -37,6 +37,7 @@
     "react-dom": "19.1.0",
     "react-hook-form": "^7.54.2",
     "recharts": "^2.14.1",
+    "sweetalert2": "^11.26.2",
     "tailwind-merge": "^2.6.0",
     "uuid": "^11.0.4",
     "zod": "^3.24.1"

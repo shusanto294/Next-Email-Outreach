@@ -6,42 +6,16 @@ import Contact from '@/models/Contact';
 import EmailAccount from '@/models/EmailAccount';
 import connectDB from '@/lib/mongodb';
 
-const sequenceSchema = z.object({
-  stepNumber: z.number().min(1),
-  subject: z.string().optional(),
-  content: z.string().optional(),
-  nextEmailAfter: z.coerce.number().min(0).default(7),
-  isActive: z.boolean().default(true),
-  useAiForSubject: z.boolean().default(false),
-  aiSubjectPrompt: z.string().optional(),
-  useAiForContent: z.boolean().default(false),
-  aiContentPrompt: z.string().optional(),
-}).refine((data) => {
-  // Subject is required if not using AI for subject
-  if (!data.useAiForSubject && (!data.subject || data.subject.trim().length === 0)) {
-    return false;
-  }
-  // AI subject prompt is required if using AI for subject
-  if (data.useAiForSubject && (!data.aiSubjectPrompt || data.aiSubjectPrompt.trim().length === 0)) {
-    return false;
-  }
-  // Content is required if not using AI for content
-  if (!data.useAiForContent && (!data.content || data.content.trim().length === 0)) {
-    return false;
-  }
-  // AI content prompt is required if using AI for content
-  if (data.useAiForContent && (!data.aiContentPrompt || data.aiContentPrompt.trim().length === 0)) {
-    return false;
-  }
-  return true;
-}, {
-  message: "Please fill in required fields based on your AI/manual selection",
-});
-
 const updateCampaignSchema = z.object({
   name: z.string().min(1, 'Campaign name is required').optional(),
   emailAccountIds: z.array(z.string()).optional(),
-  sequences: z.array(sequenceSchema).min(1, 'At least one email sequence is required').optional(),
+  // Email fields directly in campaign
+  subject: z.string().optional(),
+  content: z.string().optional(),
+  useAiForSubject: z.boolean().optional(),
+  aiSubjectPrompt: z.string().optional(),
+  useAiForContent: z.boolean().optional(),
+  aiContentPrompt: z.string().optional(),
   contactIds: z.array(z.string()).optional(),
   isActive: z.boolean().optional(),
   schedule: z.object({

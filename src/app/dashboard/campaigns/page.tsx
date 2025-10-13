@@ -134,13 +134,13 @@ export default function CampaignsPage() {
         },
         body: JSON.stringify({
           name: `Campaign ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`,
-          sequences: [{
-            stepNumber: 1,
-            subject: 'Your Subject Here',
-            content: 'Your email content here...',
-            nextEmailAfter: 7,
-            isActive: true,
-          }],
+          // Email fields directly in campaign (new schema)
+          subject: 'Your Subject Here',
+          content: 'Your email content here...',
+          useAiForSubject: false,
+          aiSubjectPrompt: '',
+          useAiForContent: false,
+          aiContentPrompt: '',
           contactCount: 0,
           isActive: false,
           emailAccountIds: [],
@@ -274,10 +274,6 @@ export default function CampaignsPage() {
                       <div className="text-xs text-blue-500 mt-1">
                         uploaded directly to campaign
                       </div>
-                    </div>
-                    <div className="bg-gray-50 p-3 rounded">
-                      <div className="text-sm text-gray-600">Sequences</div>
-                      <div className="text-lg font-medium">{campaign.sequences.length}</div>
                     </div>
                     <div className="bg-green-50 p-3 rounded border border-green-200">
                       <div className="text-sm text-green-600">Emails Sent</div>

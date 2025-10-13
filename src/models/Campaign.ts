@@ -1,29 +1,22 @@
 import mongoose, { Document, Model, Schema } from 'mongoose';
 
-export interface IEmailSequence {
-  stepNumber: number;
-  subject: string;
-  content: string;
-  nextEmailAfter: number;
-  isActive: boolean;
-  useAiForSubject?: boolean;
-  aiSubjectPrompt?: string;
-  useAiForContent?: boolean;
-  aiContentPrompt?: string;
-}
-
 export interface ICampaign extends Document {
   userId: mongoose.Types.ObjectId;
   name: string;
   emailAccountIds: mongoose.Types.ObjectId[];
-  sequences: IEmailSequence[];
+  // Email fields directly in campaign
+  subject?: string;
+  content?: string;
+  useAiForSubject?: boolean;
+  aiSubjectPrompt?: string;
+  useAiForContent?: boolean;
+  aiContentPrompt?: string;
   contactIds: mongoose.Types.ObjectId[];
   customVariables?: Array<{
     name: string;
     defaultValue: string;
   }>;
   isActive: boolean;
-  mode: 'test' | 'live';
   schedule: {
     sendingHours: {
       start: string;
@@ -49,69 +42,6 @@ export interface ICampaign extends Document {
   updatedAt: Date;
 }
 
-const EmailSequenceSchema = new Schema<IEmailSequence>({
-  stepNumber: {
-    type: Number,
-    required: true,
-  },
-  subject: {
-    type: String,
-    required: false,
-  },
-  content: {
-    type: String,
-    required: false,
-  },
-  nextEmailAfter: {
-    type: Number,
-    default: 7,
-  },
-  isActive: {
-    type: Boolean,
-    default: true,
-  },
-  useAiForSubject: {
-    type: Boolean,
-    default: false,
-  },
-  aiSubjectPrompt: {
-    type: String,
-    trim: true,
-  },
-  useAiForContent: {
-    type: Boolean,
-    default: false,
-  },
-  aiContentPrompt: {
-    type: String,
-    trim: true,
-  },
-});
-
-// Add custom validation to ensure either manual or AI fields are provided
-EmailSequenceSchema.pre('validate', function() {
-  // Ensure nextEmailAfter has a default value
-  if (this.nextEmailAfter === undefined || this.nextEmailAfter === null) {
-    this.nextEmailAfter = 7;
-  }
-  
-  // Subject validation
-  if (!this.useAiForSubject && (!this.subject || this.subject.trim().length === 0)) {
-    this.invalidate('subject', 'Subject is required when not using AI for subject');
-  }
-  if (this.useAiForSubject && (!this.aiSubjectPrompt || this.aiSubjectPrompt.trim().length === 0)) {
-    this.invalidate('aiSubjectPrompt', 'AI subject prompt is required when using AI for subject');
-  }
-  
-  // Content validation
-  if (!this.useAiForContent && (!this.content || this.content.trim().length === 0)) {
-    this.invalidate('content', 'Content is required when not using AI for content');
-  }
-  if (this.useAiForContent && (!this.aiContentPrompt || this.aiContentPrompt.trim().length === 0)) {
-    this.invalidate('aiContentPrompt', 'AI content prompt is required when using AI for content');
-  }
-});
-
 const CampaignSchema = new Schema<ICampaign>(
   {
     userId: {
@@ -128,7 +58,31 @@ const CampaignSchema = new Schema<ICampaign>(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'EmailAccount',
     }],
-    sequences: [EmailSequenceSchema],
+    // Email fields directly in campaign
+    subject: {
+      type: String,
+      trim: true,
+    },
+    content: {
+      type: String,
+      trim: true,
+    },
+    useAiForSubject: {
+      type: Boolean,
+      default: false,
+    },
+    aiSubjectPrompt: {
+      type: String,
+      trim: true,
+    },
+    useAiForContent: {
+      type: Boolean,
+      default: false,
+    },
+    aiContentPrompt: {
+      type: String,
+      trim: true,
+    },
     contactIds: [{
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Contact',
@@ -148,11 +102,6 @@ const CampaignSchema = new Schema<ICampaign>(
     isActive: {
       type: Boolean,
       default: true,
-    },
-    mode: {
-      type: String,
-      enum: ['test', 'live'],
-      default: 'test',
     },
     schedule: {
       sendingHours: {

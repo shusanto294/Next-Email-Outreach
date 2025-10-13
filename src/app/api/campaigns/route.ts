@@ -6,16 +6,30 @@ import EmailAccount from '@/models/EmailAccount';
 import Contact from '@/models/Contact';
 import connectDB from '@/lib/mongodb';
 
-const sequenceSchema = z.object({
-  stepNumber: z.number().min(1),
+const campaignSchema = z.object({
+  name: z.string().min(1, 'Campaign name is required'),
+  emailAccountIds: z.array(z.string()).optional(),
+  // Email fields directly in campaign
   subject: z.string().optional(),
   content: z.string().optional(),
-  nextEmailAfter: z.number().min(0).optional(),
-  isActive: z.boolean().default(true),
   useAiForSubject: z.boolean().default(false),
   aiSubjectPrompt: z.string().optional(),
   useAiForContent: z.boolean().default(false),
   aiContentPrompt: z.string().optional(),
+  contactIds: z.array(z.string()).default([]),
+  isActive: z.boolean().default(true),
+  schedule: z.object({
+    timezone: z.string().default('UTC'),
+    sendingHours: z.object({
+      start: z.string().default('09:00'),
+      end: z.string().default('17:00'),
+    }),
+    sendingDays: z.array(z.number().min(0).max(6)).default([1, 2, 3, 4, 5]),
+    emailDelaySeconds: z.number().min(1).default(60),
+  }),
+  trackOpens: z.boolean().default(true),
+  trackClicks: z.boolean().default(true),
+  unsubscribeLink: z.boolean().default(true),
 }).refine((data) => {
   // Subject is required if not using AI for subject
   if (!data.useAiForSubject && (!data.subject || data.subject.trim().length === 0)) {
@@ -36,26 +50,6 @@ const sequenceSchema = z.object({
   return true;
 }, {
   message: "Please fill in required fields based on your AI/manual selection",
-});
-
-const campaignSchema = z.object({
-  name: z.string().min(1, 'Campaign name is required'),
-  emailAccountIds: z.array(z.string()).optional(),
-  sequences: z.array(sequenceSchema).min(1, 'At least one email sequence is required'),
-  contactIds: z.array(z.string()).default([]),
-  isActive: z.boolean().default(true),
-  schedule: z.object({
-    timezone: z.string().default('UTC'),
-    sendingHours: z.object({
-      start: z.string().default('09:00'),
-      end: z.string().default('17:00'),
-    }),
-    sendingDays: z.array(z.number().min(0).max(6)).default([1, 2, 3, 4, 5]),
-    emailDelaySeconds: z.number().min(1).default(60),
-  }),
-  trackOpens: z.boolean().default(true),
-  trackClicks: z.boolean().default(true),
-  unsubscribeLink: z.boolean().default(true),
 });
 
 export async function GET(req: NextRequest) {

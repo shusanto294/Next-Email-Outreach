@@ -17,6 +17,9 @@ export default function DashboardHeader() {
             Cold Email Platform
           </button>
           <div className="space-x-4">
+            <Button variant="outline" onClick={() => router.push('/dashboard/unibox')}>
+              Unibox
+            </Button>
             <Button variant="outline" onClick={() => router.push('/dashboard/email-accounts')}>
               Email Accounts
             </Button>
