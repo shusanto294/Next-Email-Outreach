@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import DashboardHeader from '@/components/DashboardHeader';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -51,6 +51,7 @@ interface Email {
 
 export default function UniboxPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [emails, setEmails] = useState<Email[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
@@ -61,13 +62,22 @@ export default function UniboxPage() {
   const [totalSent, setTotalSent] = useState(0);
   const [totalReceived, setTotalReceived] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
-  const [filter, setFilter] = useState<'all' | 'sent' | 'received'>('all');
+  const [filter, setFilter] = useState<'all' | 'sent' | 'received'>('received');
   const [category, setCategory] = useState<string>('');
   const [isReadFilter, setIsReadFilter] = useState<string>('');
   const [showReplyModal, setShowReplyModal] = useState(false);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [replySubject, setReplySubject] = useState('');
   const [replyBody, setReplyBody] = useState('');
   const [isSendingReply, setIsSendingReply] = useState(false);
+
+  // Initialize filter from URL params
+  useEffect(() => {
+    const typeParam = searchParams.get('type');
+    if (typeParam === 'sent' || typeParam === 'received') {
+      setFilter(typeParam);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     fetchEmails();
@@ -85,7 +95,7 @@ export default function UniboxPage() {
     try {
       const params = new URLSearchParams({
         page: page.toString(),
-        limit: '50',
+        limit: '20',
         type: filter,
       });
 
@@ -133,6 +143,7 @@ export default function UniboxPage() {
       const data = await response.json();
       setEmailDetails(data.email);
       setSelectedEmail(email);
+      setShowDetailsModal(true);
 
       // Update the email in the list if it was marked as read
       if (email.type === 'received' && !email.isRead) {
@@ -143,6 +154,12 @@ export default function UniboxPage() {
     } catch (error) {
       console.error('Error fetching email details:', error);
     }
+  };
+
+  const handleTypeChange = (type: 'sent' | 'received') => {
+    setFilter(type);
+    setPage(1);
+    router.push(`/dashboard/unibox?type=${type}`);
   };
 
   const handleSearch = (e: React.FormEvent) => {
@@ -163,7 +180,7 @@ export default function UniboxPage() {
 
     // Prepare reply body with quoted original
     const quotedContent = emailDetails.content
-      ? '\n\n---\n' + emailDetails.content.split('\n').map(line => '> ' + line).join('\n')
+      ? '\n\n---\n' + emailDetails.content.split('\n').map((line: string) => '> ' + line).join('\n')
       : '';
     setReplyBody(quotedContent);
 
@@ -281,32 +298,13 @@ export default function UniboxPage() {
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-          <Card className="p-4">
-            <div className="flex items-center space-x-3">
-              <div className="p-3 bg-blue-100 rounded-lg">
-                <Mail className="w-6 h-6 text-blue-600" />
-              </div>
-              <div>
-                <div className="text-sm text-gray-600">Total Emails</div>
-                <div className="text-2xl font-bold">{totalSent + totalReceived}</div>
-              </div>
-            </div>
-          </Card>
-
-          <Card className="p-4">
-            <div className="flex items-center space-x-3">
-              <div className="p-3 bg-green-100 rounded-lg">
-                <Send className="w-6 h-6 text-green-600" />
-              </div>
-              <div>
-                <div className="text-sm text-gray-600">Sent</div>
-                <div className="text-2xl font-bold">{totalSent}</div>
-              </div>
-            </div>
-          </Card>
-
-          <Card className="p-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+          <Card
+            className={`p-4 cursor-pointer transition-all hover:shadow-lg ${
+              filter === 'received' ? 'ring-2 ring-purple-500' : ''
+            }`}
+            onClick={() => handleTypeChange('received')}
+          >
             <div className="flex items-center space-x-3">
               <div className="p-3 bg-purple-100 rounded-lg">
                 <Inbox className="w-6 h-6 text-purple-600" />
@@ -317,9 +315,26 @@ export default function UniboxPage() {
               </div>
             </div>
           </Card>
+
+          <Card
+            className={`p-4 cursor-pointer transition-all hover:shadow-lg ${
+              filter === 'sent' ? 'ring-2 ring-green-500' : ''
+            }`}
+            onClick={() => handleTypeChange('sent')}
+          >
+            <div className="flex items-center space-x-3">
+              <div className="p-3 bg-green-100 rounded-lg">
+                <Send className="w-6 h-6 text-green-600" />
+              </div>
+              <div>
+                <div className="text-sm text-gray-600">Sent</div>
+                <div className="text-2xl font-bold">{totalSent}</div>
+              </div>
+            </div>
+          </Card>
         </div>
 
-        {/* Filters and Search */}
+        {/* Search and Refresh */}
         <div className="bg-white rounded-lg shadow p-4 mb-6">
           <div className="flex flex-col md:flex-row gap-4">
             {/* Search */}
@@ -335,33 +350,6 @@ export default function UniboxPage() {
                 />
               </div>
             </form>
-
-            {/* Filter buttons */}
-            <div className="flex gap-2">
-              <Button
-                variant={filter === 'all' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => { setFilter('all'); setPage(1); }}
-              >
-                All
-              </Button>
-              <Button
-                variant={filter === 'sent' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => { setFilter('sent'); setPage(1); }}
-              >
-                <Send className="w-4 h-4 mr-1" />
-                Sent
-              </Button>
-              <Button
-                variant={filter === 'received' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => { setFilter('received'); setPage(1); }}
-              >
-                <Inbox className="w-4 h-4 mr-1" />
-                Received
-              </Button>
-            </div>
 
             <Button
               variant="outline"
@@ -379,195 +367,192 @@ export default function UniboxPage() {
           </div>
         )}
 
-        {/* Email List and Details */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Email List */}
-          <div className="lg:col-span-1">
-            <Card className="overflow-hidden">
-              {isLoading ? (
-                <div className="p-8 text-center text-gray-500">
-                  Loading emails...
-                </div>
-              ) : emails.length === 0 ? (
-                <div className="p-8 text-center text-gray-500">
-                  No emails found
-                </div>
-              ) : (
-                <div className="divide-y">
-                  {emails.map((email) => (
-                    <div
-                      key={email._id}
-                      onClick={() => fetchEmailDetails(email)}
-                      className={`p-4 cursor-pointer hover:bg-gray-50 transition ${
-                        selectedEmail?._id === email._id ? 'bg-blue-50' : ''
-                      } ${
-                        email.type === 'received' && !email.isRead ? 'font-semibold' : ''
-                      }`}
-                    >
-                      <div className="flex items-start justify-between mb-1">
-                        <div className="flex items-center space-x-2 flex-1 min-w-0">
-                          {email.type === 'sent' ? (
-                            <Send className="w-4 h-4 text-green-600 flex-shrink-0" />
-                          ) : (
-                            email.isRead ? (
-                              <MailOpen className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                            ) : (
-                              <Mail className="w-4 h-4 text-blue-600 flex-shrink-0" />
-                            )
-                          )}
-                          <span className="text-sm truncate">
-                            {getEmailDisplayName(email)}
-                          </span>
-                        </div>
-                        <span className="text-xs text-gray-500 ml-2 flex-shrink-0">
-                          {formatDate(email.date)}
-                        </span>
-                      </div>
-                      <div className="text-sm text-gray-600 truncate ml-6">
-                        {email.subject || '(No subject)'}
-                      </div>
-                      {email.campaignId && (
-                        <div className="text-xs text-gray-500 mt-1 ml-6">
-                          Campaign: {email.campaignId.name}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Pagination */}
-              {totalPages > 1 && (
-                <div className="border-t p-4 flex items-center justify-between">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setPage(p => Math.max(1, p - 1))}
-                    disabled={page === 1}
-                  >
-                    <ChevronLeft className="w-4 h-4" />
-                  </Button>
-                  <span className="text-sm text-gray-600">
-                    Page {page} of {totalPages}
-                  </span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                    disabled={page === totalPages}
-                  >
-                    <ChevronRight className="w-4 h-4" />
-                  </Button>
-                </div>
-              )}
-            </Card>
-          </div>
-
-          {/* Email Details */}
-          <div className="lg:col-span-2">
-            <Card className="p-6">
-              {!selectedEmail ? (
-                <div className="text-center py-12 text-gray-500">
-                  <Mail className="w-16 h-16 mx-auto mb-4 text-gray-300" />
-                  <p>Select an email to view details</p>
-                </div>
-              ) : emailDetails ? (
-                <div>
-                  {/* Email Header */}
-                  <div className="border-b pb-4 mb-4">
-                    <div className="flex items-start justify-between mb-2">
-                      <h2 className="text-xl font-semibold">
-                        {emailDetails.subject || '(No subject)'}
-                      </h2>
-                      {emailDetails.type === 'sent' ? (
-                        <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded">
-                          Sent
-                        </span>
+        {/* Email List - Full Width */}
+        <Card className="overflow-hidden">
+          {isLoading ? (
+            <div className="p-8 text-center text-gray-500">
+              Loading emails...
+            </div>
+          ) : emails.length === 0 ? (
+            <div className="p-8 text-center text-gray-500">
+              No emails found
+            </div>
+          ) : (
+            <div className="divide-y">
+              {emails.map((email) => (
+                <div
+                  key={email._id}
+                  onClick={() => fetchEmailDetails(email)}
+                  className={`p-4 cursor-pointer hover:bg-gray-50 transition ${
+                    email.type === 'received' && !email.isRead ? 'font-semibold' : ''
+                  }`}
+                >
+                  <div className="flex items-start justify-between mb-1">
+                    <div className="flex items-center space-x-2 flex-1 min-w-0">
+                      {email.type === 'sent' ? (
+                        <Send className="w-4 h-4 text-green-600 flex-shrink-0" />
                       ) : (
-                        <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded">
-                          Received
-                        </span>
+                        email.isRead ? (
+                          <MailOpen className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                        ) : (
+                          <Mail className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                        )
                       )}
+                      <span className="text-sm truncate">
+                        {getEmailDisplayName(email)}
+                      </span>
                     </div>
-
-                    <div className="space-y-2 text-sm">
-                      <div>
-                        <span className="text-gray-600">From:</span>{' '}
-                        <span className="font-medium">{emailDetails.from}</span>
-                      </div>
-                      <div>
-                        <span className="text-gray-600">To:</span>{' '}
-                        <span className="font-medium">{emailDetails.to}</span>
-                      </div>
-                      <div>
-                        <span className="text-gray-600">Date:</span>{' '}
-                        <span className="font-medium">
-                          {new Date(emailDetails.date).toLocaleString()}
-                        </span>
-                      </div>
-                      {emailDetails.campaignId && (
-                        <div>
-                          <span className="text-gray-600">Campaign:</span>{' '}
-                          <span className="font-medium">{emailDetails.campaignId.name}</span>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Reply Button for Received Emails */}
-                    {emailDetails.type === 'received' && (
-                      <div className="mt-4">
-                        <Button
-                          onClick={handleReply}
-                          className="flex items-center gap-2"
-                        >
-                          <Reply className="w-4 h-4" />
-                          Reply
-                        </Button>
-                      </div>
-                    )}
+                    <span className="text-xs text-gray-500 ml-2 flex-shrink-0">
+                      {formatDate(email.date)}
+                    </span>
                   </div>
-
-                  {/* Email Content */}
-                  <div className="prose max-w-none">
-                    {emailDetails.htmlContent ? (
-                      <div dangerouslySetInnerHTML={{ __html: emailDetails.htmlContent }} />
-                    ) : (
-                      <div className="whitespace-pre-wrap">{emailDetails.content}</div>
-                    )}
+                  <div className="text-sm text-gray-600 truncate ml-6">
+                    {email.subject || '(No subject)'}
                   </div>
-
-                  {/* Email Metadata (for sent emails) */}
-                  {emailDetails.type === 'sent' && (
-                    <div className="mt-6 pt-4 border-t">
-                      <div className="grid grid-cols-2 gap-4 text-sm">
-                        <div>
-                          <span className="text-gray-600">Status:</span>{' '}
-                          <span className={`font-medium ${
-                            emailDetails.status === 'delivered' ? 'text-green-600' :
-                            emailDetails.status === 'failed' ? 'text-red-600' :
-                            'text-gray-600'
-                          }`}>
-                            {emailDetails.status}
-                          </span>
-                        </div>
-                        {emailDetails.opened && (
-                          <div>
-                            <span className="text-gray-600">Opened:</span>{' '}
-                            <span className="font-medium text-green-600">Yes</span>
-                          </div>
-                        )}
-                      </div>
+                  {email.campaignId && (
+                    <div className="text-xs text-gray-500 mt-1 ml-6">
+                      Campaign: {email.campaignId.name}
                     </div>
                   )}
                 </div>
-              ) : (
-                <div className="text-center py-12 text-gray-500">
-                  Loading email details...
+              ))}
+            </div>
+          )}
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="border-t p-4 flex items-center justify-between">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                disabled={page === 1}
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </Button>
+              <span className="text-sm text-gray-600">
+                Page {page} of {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                disabled={page === totalPages}
+              >
+                <ChevronRight className="w-4 h-4" />
+              </Button>
+            </div>
+          )}
+        </Card>
+
+        {/* Email Details Modal */}
+        {showDetailsModal && emailDetails && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-xl font-bold">
+                    {emailDetails.subject || '(No subject)'}
+                  </h2>
+                  <button
+                    onClick={() => {
+                      setShowDetailsModal(false);
+                      setEmailDetails(null);
+                      setSelectedEmail(null);
+                    }}
+                    className="text-gray-500 hover:text-gray-700"
+                  >
+                    <X className="w-6 h-6" />
+                  </button>
                 </div>
-              )}
-            </Card>
+
+                {/* Email Header */}
+                <div className="border-b pb-4 mb-4">
+                  <div className="flex items-start justify-between mb-2">
+                    {emailDetails.type === 'sent' ? (
+                      <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded">
+                        Sent
+                      </span>
+                    ) : (
+                      <span className="px-2 py-1 bg-purple-100 text-purple-700 text-xs rounded">
+                        Received
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="space-y-2 text-sm">
+                    <div>
+                      <span className="text-gray-600">From:</span>{' '}
+                      <span className="font-medium">{emailDetails.from}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">To:</span>{' '}
+                      <span className="font-medium">{emailDetails.to}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Date:</span>{' '}
+                      <span className="font-medium">
+                        {new Date(emailDetails.date).toLocaleString()}
+                      </span>
+                    </div>
+                    {emailDetails.campaignId && (
+                      <div>
+                        <span className="text-gray-600">Campaign:</span>{' '}
+                        <span className="font-medium">{emailDetails.campaignId.name}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Reply Button for Received Emails */}
+                  {emailDetails.type === 'received' && (
+                    <div className="mt-4">
+                      <Button
+                        onClick={handleReply}
+                        className="flex items-center gap-2"
+                      >
+                        <Reply className="w-4 h-4" />
+                        Reply
+                      </Button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Email Content */}
+                <div className="prose max-w-none">
+                  {emailDetails.htmlContent ? (
+                    <div dangerouslySetInnerHTML={{ __html: emailDetails.htmlContent }} />
+                  ) : (
+                    <div className="whitespace-pre-wrap">{emailDetails.content}</div>
+                  )}
+                </div>
+
+                {/* Email Metadata (for sent emails) */}
+                {emailDetails.type === 'sent' && (
+                  <div className="mt-6 pt-4 border-t">
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <span className="text-gray-600">Status:</span>{' '}
+                        <span className={`font-medium ${
+                          emailDetails.status === 'delivered' ? 'text-green-600' :
+                          emailDetails.status === 'failed' ? 'text-red-600' :
+                          'text-gray-600'
+                        }`}>
+                          {emailDetails.status}
+                        </span>
+                      </div>
+                      {emailDetails.opened && (
+                        <div>
+                          <span className="text-gray-600">Opened:</span>{' '}
+                          <span className="font-medium text-green-600">Yes</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Reply Modal */}
         {showReplyModal && (

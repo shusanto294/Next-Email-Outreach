@@ -14,12 +14,9 @@ export default function DashboardHeader() {
             onClick={() => router.push('/dashboard')}
             className="text-2xl font-bold text-gray-900 hover:text-blue-600 transition-colors"
           >
-            Cold Email Platform
+            Outreach
           </button>
           <div className="space-x-4">
-            <Button variant="outline" onClick={() => router.push('/dashboard/unibox')}>
-              Unibox
-            </Button>
             <Button variant="outline" onClick={() => router.push('/dashboard/email-accounts')}>
               Email Accounts
             </Button>
@@ -28,6 +25,9 @@ export default function DashboardHeader() {
             </Button>
             <Button variant="outline" onClick={() => router.push('/dashboard/contacts')}>
               Contacts
+            </Button>
+            <Button variant="outline" onClick={() => router.push('/dashboard/unibox')}>
+              Unibox
             </Button>
           </div>
         </div>

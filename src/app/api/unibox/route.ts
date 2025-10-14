@@ -118,8 +118,18 @@ export async function GET(req: NextRequest) {
 
       // Paginate combined results
       combinedEmails = combinedEmails.slice(skip, skip + limit);
+    }
 
-      // Get totals for all
+    // Always get totals for both sent and received to display accurate counts
+    // Only skip if we already have the count from above
+    if (type === 'sent') {
+      // We already have totalSent, but need totalReceived
+      totalReceived = await ReceivedEmail.countDocuments(baseFilter);
+    } else if (type === 'received') {
+      // We already have totalReceived, but need totalSent
+      totalSent = await SentEmail.countDocuments(baseFilter);
+    } else {
+      // type === 'all', get both totals
       totalSent = await SentEmail.countDocuments(baseFilter);
       totalReceived = await ReceivedEmail.countDocuments(baseFilter);
     }
