@@ -308,70 +308,13 @@ export default function CampaignsPage() {
                     </div>
                   </div>
 
-                  {/* Campaign Performance Metrics */}
-                  {(campaign.stats?.sent || 0) > 0 && (
-                    <div className="mt-4 pt-4 border-t">
-                      <h4 className="text-sm font-medium text-gray-700 mb-2">Performance Metrics</h4>
-                      <div className="flex items-center justify-between text-sm">
-                        <div className="flex space-x-6">
-                          <span className="text-green-600">
-                            Open Rate: {calculateOpenRate(campaign.stats?.opened || 0, campaign.stats?.sent || 0)}%
-                          </span>
-                          <span className="text-blue-600">
-                            Click Rate: {campaign.stats?.sent > 0 ? Math.round(((campaign.stats?.clicked || 0) / campaign.stats.sent) * 100) : 0}%
-                          </span>
-                          <span className="text-purple-600">
-                            Reply Rate: {campaign.stats?.sent > 0 ? Math.round(((campaign.stats?.replied || 0) / campaign.stats.sent) * 100) : 0}%
-                          </span>
-                        </div>
-                        <div className="flex space-x-6 text-red-600">
-                          <span>Bounced: {campaign.stats.bounced}</span>
-                          <span>Unsubscribed: {campaign.stats.unsubscribed}</span>
-                        </div>
-                      </div>
-                    </div>
-                  )}
+
                 </CardContent>
               </Card>
             ))}
           </div>
         )}
 
-        {/* Coming Soon Notice */}
-        <Card className="mt-8">
-          <CardHeader>
-            <CardTitle>Campaign Builder Coming Soon</CardTitle>
-            <CardDescription>
-              Full campaign creation with email sequences and personalization
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
-              <h3 className="text-blue-800 font-medium mb-2">🚧 Campaign Builder In Development</h3>
-              <p className="text-blue-700 text-sm">
-                The campaign creation interface is currently being built. This will include:
-              </p>
-              <div className="mt-4 space-y-2">
-                <div className="flex items-center text-sm">
-                  <span className="text-yellow-600 mr-2">🚧</span>
-                  <span>Drag-and-drop email sequence builder</span>
-                </div>
-                <div className="flex items-center text-sm">
-                  <span className="text-yellow-600 mr-2">🚧</span>
-                  <span>Email templates with personalization variables</span>
-                </div>
-                <div className="flex items-center text-sm">
-                  <span className="text-yellow-600 mr-2">🚧</span>
-                  <span>A/B testing for subject lines and content</span>
-                </div>
-                <div className="flex items-center text-sm">
-                  <span className="text-yellow-600 mr-2">🚧</span>
-                  <span>Advanced scheduling and sending controls</span>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
       </div>
     </div>
   );

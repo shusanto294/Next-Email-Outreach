@@ -31,6 +31,7 @@ interface Email {
   subject: string;
   date: Date;
   isRead?: boolean;
+  isSeen?: boolean;
   isStarred?: boolean;
   status?: string;
   opened?: boolean;
@@ -145,10 +146,10 @@ export default function UniboxPage() {
       setSelectedEmail(email);
       setShowDetailsModal(true);
 
-      // Update the email in the list if it was marked as read
-      if (email.type === 'received' && !email.isRead) {
+      // Update the email in the list if it was marked as seen
+      if (email.type === 'received' && !email.isSeen) {
         setEmails(prev => prev.map(e =>
-          e._id === email._id ? { ...e, isRead: true } : e
+          e._id === email._id ? { ...e, isSeen: true, isRead: true } : e
         ));
       }
     } catch (error) {
@@ -383,8 +384,10 @@ export default function UniboxPage() {
                 <div
                   key={email._id}
                   onClick={() => fetchEmailDetails(email)}
-                  className={`p-4 cursor-pointer hover:bg-gray-50 transition ${
-                    email.type === 'received' && !email.isRead ? 'font-semibold' : ''
+                  className={`p-4 cursor-pointer transition ${
+                    email.type === 'received' && !email.isSeen
+                      ? 'bg-blue-50 hover:bg-blue-100 font-semibold border-l-4 border-blue-500'
+                      : 'hover:bg-gray-50'
                   }`}
                 >
                   <div className="flex items-start justify-between mb-1">
@@ -392,7 +395,7 @@ export default function UniboxPage() {
                       {email.type === 'sent' ? (
                         <Send className="w-4 h-4 text-green-600 flex-shrink-0" />
                       ) : (
-                        email.isRead ? (
+                        email.isSeen ? (
                           <MailOpen className="w-4 h-4 text-gray-400 flex-shrink-0" />
                         ) : (
                           <Mail className="w-4 h-4 text-blue-600 flex-shrink-0" />

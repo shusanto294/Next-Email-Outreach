@@ -38,13 +38,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         .lean();
 
       if (email) {
-        // Mark as read when viewing
+        // Mark as seen when viewing (user opened the email details)
         await ReceivedEmail.updateOne(
           { _id: id },
-          { $set: { isRead: true, readAt: new Date() } }
+          { $set: { isSeen: true, isRead: true, readAt: new Date() } }
         );
 
-        email = { ...email, type: 'received', isRead: true };
+        email = { ...email, type: 'received', isRead: true, isSeen: true };
       }
     }
 

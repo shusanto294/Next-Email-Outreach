@@ -29,6 +29,7 @@ export interface IReceivedEmail extends Document {
 
   // Status
   isRead: boolean;
+  isSeen: boolean; // Whether user has viewed/previewed the email
   isStarred: boolean;
   isRepliedTo: boolean;
   isForwarded: boolean;
@@ -121,6 +122,11 @@ const ReceivedEmailSchema = new Schema<IReceivedEmail>(
       default: false,
       index: true,
     },
+    isSeen: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
     isStarred: {
       type: Boolean,
       default: false,
@@ -170,6 +176,7 @@ const ReceivedEmailSchema = new Schema<IReceivedEmail>(
 ReceivedEmailSchema.index({ userId: 1, receivedAt: -1 });
 ReceivedEmailSchema.index({ emailAccountId: 1, receivedAt: -1 });
 ReceivedEmailSchema.index({ userId: 1, isRead: 1, receivedAt: -1 });
+ReceivedEmailSchema.index({ userId: 1, isSeen: 1, receivedAt: -1 });
 ReceivedEmailSchema.index({ userId: 1, category: 1, receivedAt: -1 });
 ReceivedEmailSchema.index({ threadId: 1, receivedAt: 1 });
 ReceivedEmailSchema.index({ campaignId: 1, isReply: 1, receivedAt: -1 });

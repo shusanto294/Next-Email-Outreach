@@ -434,53 +434,6 @@ export default function DashboardPage() {
           </Card>
         </div>
 
-        {/* Coming Soon Notice */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Platform Status</CardTitle>
-            <CardDescription>
-              Development Progress
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
-              <h3 className="text-blue-800 font-medium mb-2">🚧 Platform Under Development</h3>
-              <p className="text-blue-700 text-sm">
-                This cold email platform is currently being built with features similar to Instantly AI. 
-                Core functionality including email account management, campaign creation, contact management, 
-                and analytics dashboard are in development.
-              </p>
-              <div className="mt-4 space-y-2">
-                <div className="flex items-center text-sm">
-                  <span className="text-green-600 mr-2">✅</span>
-                  <span>User Authentication System</span>
-                </div>
-                <div className="flex items-center text-sm">
-                  <span className="text-green-600 mr-2">✅</span>
-                  <span>Database Schema & Models</span>
-                </div>
-                <div className="flex items-center text-sm">
-                  <span className="text-green-600 mr-2">✅</span>
-                  <span>Email Account Management</span>
-                </div>
-                <div className="flex items-center text-sm">
-                  <span className="text-green-600 mr-2">✅</span>
-                  <span>Contact Management & CSV Import</span>
-                </div>
-                <div className="flex items-center text-sm">
-                  <span className="text-green-600 mr-2">✅</span>
-                  <span>Campaign Builder with Sequences</span>
-                </div>
-                <div className="flex items-center text-sm">
-                  <span className="text-green-600 mr-2">✅</span>
-                  <span>Email Sending Engine</span>
-                </div>
-              </div>
-              
-
-            </div>
-          </CardContent>
-        </Card>
       </div>
     </div>
   );

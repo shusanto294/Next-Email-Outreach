@@ -396,6 +396,7 @@ def fetch_emails_from_account(email_account):
                     'references': references if references else [],
                     'attachments': attachments if attachments else [],
                     'isRead': False,
+                    'isSeen': False,  # New field to track if user has viewed the email
                     'isStarred': False,
                     'isRepliedTo': False,
                     'isForwarded': False,
