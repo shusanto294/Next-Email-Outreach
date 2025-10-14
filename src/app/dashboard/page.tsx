@@ -320,40 +320,10 @@ export default function DashboardPage() {
             <CardHeader>
               <CardTitle>Account Information</CardTitle>
               <CardDescription>
-                Your current plan and usage
+                Timezone and account specific settings
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Email:</span>
-                  <span className="font-medium">{user.email}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Plan:</span>
-                  <span className="font-medium capitalize">{user.plan}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Monthly Limit:</span>
-                  <span className="font-medium">{user.emailsLimit.toLocaleString()}</span>
-                </div>
-                {openaiModel && (
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">AI Model:</span>
-                    <span className="font-medium capitalize">
-                      {openaiModel}
-                    </span>
-                  </div>
-                )}
-                {openaiApiKey && (
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">OpenAI:</span>
-                    <span className="font-medium text-sm text-green-600">
-                      Configured
-                    </span>
-                  </div>
-                )}
-              </div>
 
               {/* Timezone Settings Section */}
               <div className="border-t pt-4 space-y-4">

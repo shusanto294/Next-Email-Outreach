@@ -255,14 +255,24 @@ export default function UniboxPage() {
   };
 
   const formatDate = (date: Date) => {
+    if (!date) return 'N/A';
+
     const d = new Date(date);
+
+    // Check if date is valid
+    if (isNaN(d.getTime())) {
+      return 'Invalid date';
+    }
+
     const now = new Date();
     const diffMs = now.getTime() - d.getTime();
     const diffMins = Math.floor(diffMs / 60000);
     const diffHours = Math.floor(diffMs / 3600000);
     const diffDays = Math.floor(diffMs / 86400000);
 
-    if (diffMins < 60) {
+    if (diffMins < 1) {
+      return 'Just now';
+    } else if (diffMins < 60) {
       return `${diffMins}m ago`;
     } else if (diffHours < 24) {
       return `${diffHours}h ago`;
@@ -495,7 +505,7 @@ export default function UniboxPage() {
                     <div>
                       <span className="text-gray-600">Date:</span>{' '}
                       <span className="font-medium">
-                        {new Date(emailDetails.date).toLocaleString()}
+                        {emailDetails.date ? new Date(emailDetails.date).toLocaleString() : 'N/A'}
                       </span>
                     </div>
                     {emailDetails.campaignId && (

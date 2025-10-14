@@ -1438,32 +1438,6 @@ Best regards,
                 </p>
               </div>
 
-              <div className="space-y-2">
-                <div className="flex items-center">
-                  <input
-                    type="checkbox"
-                    {...register('trackOpens')}
-                    className="rounded mr-2"
-                  />
-                  <label className="text-sm">Track email opens</label>
-                </div>
-                <div className="flex items-center">
-                  <input
-                    type="checkbox"
-                    {...register('trackClicks')}
-                    className="rounded mr-2"
-                  />
-                  <label className="text-sm">Track link clicks</label>
-                </div>
-                <div className="flex items-center">
-                  <input
-                    type="checkbox"
-                    {...register('unsubscribeLink')}
-                    className="rounded mr-2"
-                  />
-                  <label className="text-sm">Include unsubscribe link</label>
-                </div>
-              </div>
             </CardContent>
           </Card>
           )}

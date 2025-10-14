@@ -379,6 +379,9 @@ while True:
                 from_email = email_account.get('email', 'N/A') if email_account else 'N/A'
                 to_email = contact.get('email', 'N/A') if contact else 'N/A'
 
+                # Get current time in UTC (timezone-aware)
+                current_utc_time = datetime.now(pytz.UTC)
+
                 # Prepare email document with PERSONALIZED content
                 sent_email_doc = {
                     "userId": user_id,
@@ -390,14 +393,14 @@ while True:
                     "subject": final_subject,  # Use personalized subject
                     "content": final_content,  # Use personalized content
                     "status": "sent",  # Will be updated to 'delivered' by email provider callback
-                    "sentAt": datetime.now(),
+                    "sentAt": current_utc_time,
                     "wasAiGenerated": useAiForSubject or useAiForContent,
                     "aiGeneratedSubject": useAiForSubject,
                     "aiGeneratedContent": useAiForContent,
                     "opened": False,
                     "clicked": False,
-                    "createdAt": datetime.now(),
-                    "updatedAt": datetime.now(),
+                    "createdAt": current_utc_time,
+                    "updatedAt": current_utc_time,
                 }
 
                 # Insert the sent email document
@@ -422,7 +425,6 @@ while True:
             )
             print(f"\n📊 Sent count updated: {sent} -> {new_sent_count}")
 
-            print("-" * 50)
 
         # End of campaign loop
         if campaign_count == 0:

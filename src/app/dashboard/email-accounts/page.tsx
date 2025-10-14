@@ -25,7 +25,7 @@ const createEmailAccountSchema = (isEditing: boolean = false) => z.object({
   imapHost: z.string().min(1, 'IMAP host is required'),
   imapPort: z.coerce.number().min(1).max(65535),
   imapSecure: z.boolean(),
-  dailyLimit: z.coerce.number().min(1).max(1000).default(50),
+  dailyLimit: z.coerce.number().min(1).max(1000).default(30),
 });
 
 const emailAccountSchema = createEmailAccountSchema();
@@ -74,7 +74,7 @@ export default function EmailAccountsPage() {
       smtpSecure: false,
       imapPort: 993,
       imapSecure: true,
-      dailyLimit: 50,
+      dailyLimit: 30,
     },
   });
 
@@ -417,7 +417,7 @@ export default function EmailAccountsPage() {
                       type="number"
                       {...register('dailyLimit')}
                       className={errors.dailyLimit ? 'border-red-500' : ''}
-                      placeholder="50"
+                      placeholder="30"
                     />
                     {errors.dailyLimit && (
                       <p className="text-red-500 text-sm mt-1">{errors.dailyLimit.message}</p>

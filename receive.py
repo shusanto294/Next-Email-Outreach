@@ -186,6 +186,9 @@ def find_or_create_contact(email_address, user_id):
     name_part = email_address.split('@')[0]
     first_name = name_part.replace('.', ' ').replace('_', ' ').title()
 
+    # Get current time in UTC (timezone-aware)
+    current_utc_time = datetime.now(pytz.UTC)
+
     # Create new contact
     new_contact = {
         'userId': user_id,
@@ -199,8 +202,8 @@ def find_or_create_contact(email_address, user_id):
         'linkedin': '',
         'status': 'active',
         'source': 'email_reply',
-        'createdAt': datetime.now(),
-        'updatedAt': datetime.now(),
+        'createdAt': current_utc_time,
+        'updatedAt': current_utc_time,
     }
 
     result = contacts_collection.insert_one(new_contact)
@@ -328,8 +331,12 @@ def fetch_emails_from_account(email_account):
                 # Parse date first (needed for duplicate check)
                 try:
                     received_date = email.utils.parsedate_to_datetime(date_header)
+                    # Ensure it's timezone-aware (convert to UTC if naive)
+                    if received_date.tzinfo is None:
+                        received_date = pytz.UTC.localize(received_date)
                 except:
-                    received_date = datetime.now()
+                    # Fallback to current UTC time if parsing fails
+                    received_date = datetime.now(pytz.UTC)
 
                 # Check if already exists (multiple conditions to prevent duplicates)
                 existing = None
@@ -379,6 +386,9 @@ def fetch_emails_from_account(email_account):
                 subject_lower = (subject or '').lower()
                 is_likely_reply = any(indicator in subject_lower for indicator in ['re:', 'reply', 'response'])
 
+                # Get current time in UTC (timezone-aware)
+                current_utc_time = datetime.now(pytz.UTC)
+
                 # Create received email document
                 received_email_doc = {
                     'userId': user_id,
@@ -404,8 +414,8 @@ def fetch_emails_from_account(email_account):
                     'isReply': is_reply or is_likely_reply,
                     'sentEmailId': sent_email_id,
                     'receivedAt': received_date,
-                    'createdAt': datetime.now(),
-                    'updatedAt': datetime.now(),
+                    'createdAt': current_utc_time,
+                    'updatedAt': current_utc_time,
                 }
 
                 # Insert into database
