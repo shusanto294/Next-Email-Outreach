@@ -8,7 +8,7 @@ import { testBothConnections } from '@/lib/email-test';
 const emailAccountSchema = z.object({
   email: z.string().email('Invalid email address'),
   provider: z.enum(['gmail', 'outlook', 'smtp', 'other']),
-  fromName: z.string().optional(),
+  fromName: z.string().min(1, 'From Name is required'),
   smtpHost: z.string().min(1, 'SMTP host is required'),
   smtpPort: z.number().min(1).max(65535),
   smtpSecure: z.boolean(),
@@ -28,12 +28,49 @@ export async function GET(req: NextRequest) {
     }
 
     await connectDB();
+
     const emailAccounts = await EmailAccount.find({ userId: user._id }).select('-smtpPassword');
 
-    return NextResponse.json({ emailAccounts });
+    // Dynamically import SentEmail model to avoid circular dependency issues
+    const { default: SentEmail } = await import('@/models/SentEmail');
+
+    // Get today's start date (midnight local time)
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // Calculate sentToday count for each email account by querying SentEmail collection
+    const emailAccountsWithCount = [];
+
+    for (const account of emailAccounts) {
+      try {
+        const sentCount = await SentEmail.countDocuments({
+          emailAccountId: account._id,
+          sentAt: { $gte: today },
+          status: { $in: ['sent', 'delivered'] }
+        });
+
+        emailAccountsWithCount.push({
+          ...account.toObject(),
+          sentToday: sentCount
+        });
+      } catch (countError) {
+        console.error('Error counting emails for account:', account.email, countError);
+        // If count fails, use the value from database or default to 0
+        emailAccountsWithCount.push({
+          ...account.toObject(),
+          sentToday: account.sentToday || 0
+        });
+      }
+    }
+
+    return NextResponse.json({ emailAccounts: emailAccountsWithCount });
   } catch (error) {
     console.error('Get email accounts error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    return NextResponse.json({
+      error: 'Internal server error',
+      message: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined
+    }, { status: 500 });
   }
 }
 
@@ -113,9 +150,15 @@ export async function POST(req: NextRequest) {
     // Return account without password
     const accountResponse = await EmailAccount.findById(emailAccount._id).select('-smtpPassword');
 
+    // For new accounts, sentToday is always 0
+    const accountWithCount = {
+      ...accountResponse?.toObject(),
+      sentToday: 0
+    };
+
     return NextResponse.json({
       message: 'Email account added successfully',
-      emailAccount: accountResponse,
+      emailAccount: accountWithCount,
     }, { status: 201 });
   } catch (error: unknown) {
     if (error instanceof ZodError) {

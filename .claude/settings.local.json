@@ -27,7 +27,10 @@
       "Bash(lsof:*)",
       "Bash(npm ls:*)",
       "Bash(npm remove:*)",
-      "Bash(NODE_ENV=production npm run build)"
+      "Bash(NODE_ENV=production npm run build)",
+      "Bash(xargs kill:*)",
+      "Bash(curl:*)",
+      "Bash(awk:*)"
     ],
     "deny": []
   }

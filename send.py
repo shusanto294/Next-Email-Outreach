@@ -278,6 +278,25 @@ while True:
                 email_account = email_accounts_collection.find_one({"_id": ObjectId(current_email_account_id)})
                 if email_account:
                     print(f"Email Account to use: {email_account.get('email', 'N/A')}")
+
+                    # Calculate sent count for today from database
+                    today_start = datetime.now(pytz.UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+                    sent_today_count = sent_emails_collection.count_documents({
+                        "emailAccountId": ObjectId(current_email_account_id),
+                        "sentAt": {"$gte": today_start},
+                        "status": {"$in": ["sent", "delivered"]}
+                    })
+
+                    daily_limit = email_account.get('dailyLimit', 50)
+                    print(f"📊 Daily Limit Check: {sent_today_count}/{daily_limit} emails sent today")
+
+                    # Check if daily limit is reached
+                    if sent_today_count >= daily_limit:
+                        print(f"⚠️  Daily limit reached for {email_account.get('email')}. Skipping this email account.")
+                        print(f"   This email account has already sent {sent_today_count} emails today (limit: {daily_limit})")
+                        # Skip to next campaign
+                        continue
+
                 else:
                     print("Email account not found in database")
             else:

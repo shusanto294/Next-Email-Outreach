@@ -14,13 +14,13 @@ import DashboardHeader from '@/components/DashboardHeader';
 const createEmailAccountSchema = (isEditing: boolean = false) => z.object({
   email: z.string().email('Invalid email address'),
   provider: z.enum(['gmail', 'outlook', 'smtp', 'other']),
-  fromName: z.string().optional(),
+  fromName: z.string().min(1, 'From Name is required'),
   smtpHost: z.string().min(1, 'SMTP host is required'),
   smtpPort: z.coerce.number().min(1).max(65535),
   smtpSecure: z.boolean(),
   smtpUsername: z.string().min(1, 'SMTP username is required'),
-  smtpPassword: isEditing 
-    ? z.string().optional() 
+  smtpPassword: isEditing
+    ? z.string().optional()
     : z.string().min(1, 'SMTP password is required'),
   imapHost: z.string().min(1, 'IMAP host is required'),
   imapPort: z.coerce.number().min(1).max(65535),
@@ -340,7 +340,7 @@ export default function EmailAccountsPage() {
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      From Name
+                      From Name *
                     </label>
                     <Input
                       {...register('fromName')}
