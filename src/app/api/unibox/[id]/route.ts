@@ -27,7 +27,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         .lean();
 
       if (email) {
-        email = { ...email, type: 'sent' };
+        email = {
+          ...email,
+          type: 'sent',
+          date: email.sentAt || email.createdAt
+        };
       }
     } else if (type === 'received') {
       email = await ReceivedEmail.findOne({ _id: id, userId: user._id })
@@ -44,7 +48,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
           { $set: { isSeen: true, isRead: true, readAt: new Date() } }
         );
 
-        email = { ...email, type: 'received', isRead: true, isSeen: true };
+        email = {
+          ...email,
+          type: 'received',
+          isRead: true,
+          isSeen: true,
+          date: email.receivedAt || email.createdAt
+        };
       }
     }
 

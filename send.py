@@ -12,7 +12,7 @@ from openai import OpenAI
 # Force unbuffered output
 sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', buffering=1)
 
-wait_time = 60  # Wait 60 seconds between cycles
+wait_time = 1  # Wait 60 seconds between cycles
 
 load_dotenv('.env.local')
 
@@ -268,41 +268,78 @@ while True:
             contact_ids = campaign.get('contactIds', [])
             contact_count = len(contact_ids)
 
-            # Determine current email account index based on sent count (auto-rotation)
+            # Get or initialize the current email account index from campaign
+            current_email_account_index = campaign.get('currentEmailAccountIndex', 0)
+
+            # Ensure index is valid (in case email accounts were removed)
             if email_account_count > 0:
-                current_email_account_index = sent % email_account_count
-                current_email_account_id = email_account_ids[current_email_account_index]
+                if current_email_account_index >= email_account_count:
+                    current_email_account_index = 0
+                    # Update the campaign with corrected index
+                    campaigns_collection.update_one(
+                        {"_id": campaign["_id"]},
+                        {"$set": {"currentEmailAccountIndex": 0}}
+                    )
 
+                print(f"\n🔄 Email Account Rotation: Using account #{current_email_account_index + 1} of {email_account_count}")
 
-                # Query email account details
-                email_account = email_accounts_collection.find_one({"_id": ObjectId(current_email_account_id)})
-                if email_account:
-                    print(f"Email Account to use: {email_account.get('email', 'N/A')}")
+                # Try to find an available email account (one that hasn't hit daily limit)
+                email_account = None
+                current_email_account_id = None
+                attempts = 0
+                max_attempts = email_account_count  # Try all accounts once
 
-                    # Calculate sent count for today from database
-                    today_start = datetime.now(pytz.UTC).replace(hour=0, minute=0, second=0, microsecond=0)
-                    sent_today_count = sent_emails_collection.count_documents({
-                        "emailAccountId": ObjectId(current_email_account_id),
-                        "sentAt": {"$gte": today_start},
-                        "status": {"$in": ["sent", "delivered"]}
-                    })
+                while attempts < max_attempts:
+                    current_email_account_id = email_account_ids[current_email_account_index]
 
-                    daily_limit = email_account.get('dailyLimit', 50)
-                    print(f"📊 Daily Limit Check: {sent_today_count}/{daily_limit} emails sent today")
+                    # Query email account details
+                    temp_email_account = email_accounts_collection.find_one({"_id": ObjectId(current_email_account_id)})
 
-                    # Check if daily limit is reached
-                    if sent_today_count >= daily_limit:
-                        print(f"⚠️  Daily limit reached for {email_account.get('email')}. Skipping this email account.")
-                        print(f"   This email account has already sent {sent_today_count} emails today (limit: {daily_limit})")
-                        # Skip to next campaign
-                        continue
+                    if temp_email_account:
+                        # Calculate sent count for today from database
+                        today_start = datetime.now(pytz.UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+                        sent_today_count = sent_emails_collection.count_documents({
+                            "emailAccountId": ObjectId(current_email_account_id),
+                            "sentAt": {"$gte": today_start},
+                            "status": {"$in": ["sent", "delivered"]}
+                        })
 
-                else:
-                    print("Email account not found in database")
+                        daily_limit = temp_email_account.get('dailyLimit', 50)
+                        print(f"📊 Checking {temp_email_account.get('email', 'N/A')}: {sent_today_count}/{daily_limit} emails sent today")
+
+                        # Check if this account can send more emails
+                        if sent_today_count < daily_limit:
+                            email_account = temp_email_account
+                            print(f"✅ Using email account: {email_account.get('email', 'N/A')}")
+                            break
+                        else:
+                            print(f"⚠️  Daily limit reached for {temp_email_account.get('email')}. Trying next account...")
+
+                    # Move to next account and try again
+                    current_email_account_index = (current_email_account_index + 1) % email_account_count
+                    attempts += 1
+
+                # If no available account was found after checking all
+                if email_account is None:
+                    print(f"❌ All email accounts have reached their daily limits. Skipping campaign.")
+                    # Update the index anyway for next cycle
+                    next_index = (campaign.get('currentEmailAccountIndex', 0) + 1) % email_account_count
+                    campaigns_collection.update_one(
+                        {"_id": campaign["_id"]},
+                        {"$set": {"currentEmailAccountIndex": next_index}}
+                    )
+                    continue
+
             else:
                 print("No email accounts available for this campaign")
                 current_email_account_index = None
                 current_email_account_id = None
+                email_account = None
+
+            # Check if we have a valid email account before proceeding
+            if email_account is None:
+                print("⚠️  No available email account. Skipping to next campaign.")
+                continue
 
             # Determine current contact index based on sent count
             if contact_count > 0:
@@ -436,13 +473,19 @@ while True:
                 print(f"❌ Error storing sent email in database: {e}")
                 # Continue even if database storage fails
 
-            # Increment the sent count
+            # Increment the sent count and rotate email account index
             new_sent_count = sent + 1
+            next_email_account_index = (current_email_account_index + 1) % email_account_count if email_account_count > 0 else 0
+
             campaigns_collection.update_one(
                 {"_id": campaign["_id"]},
-                {"$set": {"stats.sent": new_sent_count}}
+                {"$set": {
+                    "stats.sent": new_sent_count,
+                    "currentEmailAccountIndex": next_email_account_index
+                }}
             )
             print(f"\n📊 Sent count updated: {sent} -> {new_sent_count}")
+            print(f"🔄 Email account index rotated: {current_email_account_index} -> {next_email_account_index}")
 
 
         # End of campaign loop

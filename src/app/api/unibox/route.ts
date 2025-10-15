@@ -60,11 +60,11 @@ export async function GET(req: NextRequest) {
         sentEmails = await sentQuery.limit(limit).lean();
       }
 
-      // Add type identifier
+      // Add type identifier and use sentAt or createdAt as date
       sentEmails = sentEmails.map(email => ({
         ...email,
         type: 'sent',
-        date: email.sentAt,
+        date: email.sentAt || email.createdAt,
       }));
     }
 
@@ -101,11 +101,11 @@ export async function GET(req: NextRequest) {
         receivedEmails = await receivedQuery.limit(limit).lean();
       }
 
-      // Add type identifier
+      // Add type identifier and use receivedAt or createdAt as date
       receivedEmails = receivedEmails.map(email => ({
         ...email,
         type: 'received',
-        date: email.receivedAt,
+        date: email.receivedAt || email.createdAt,
       }));
     }
 
