@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogClose } from '@/components/ui/dialog';
 import { Plus, Edit, Trash2, Search, Mail, Building, Filter } from 'lucide-react';
 import DashboardHeader from '@/components/DashboardHeader';
 
@@ -375,16 +376,17 @@ function ContactsPageContent() {
           </div>
         )}
 
-        {/* Create/Edit Form */}
-        {showCreateForm && (
-          <Card className="mb-8">
-            <CardHeader>
-              <CardTitle>{editingContact ? 'Edit Contact' : 'Add New Contact'}</CardTitle>
-              <CardDescription>
+        {/* Create/Edit Form Modal */}
+        <Dialog open={showCreateForm} onOpenChange={setShowCreateForm}>
+          <DialogContent className="w-full max-w-3xl">
+            <DialogClose onClose={handleCancel} />
+            <DialogHeader>
+              <DialogTitle>{editingContact ? 'Edit Contact' : 'Add New Contact'}</DialogTitle>
+              <DialogDescription>
                 {editingContact ? 'Update contact details' : 'Add a new contact to your database'}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
+              </DialogDescription>
+            </DialogHeader>
+            <div className="px-6 py-4">
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
@@ -402,14 +404,15 @@ function ContactsPageContent() {
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Campaign
+                      Campaign *
                     </label>
                     <select
                       value={formData.campaignId}
                       onChange={(e) => setFormData({ ...formData, campaignId: e.target.value })}
                       className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      required
                     >
-                      <option value="">-- No Campaign --</option>
+                      <option value="">-- Select Campaign --</option>
                       {campaigns.map(campaign => (
                         <option key={campaign._id} value={campaign._id}>
                           {campaign.name}
@@ -515,7 +518,7 @@ function ContactsPageContent() {
                   />
                 </div>
 
-                <div className="flex space-x-2">
+                <div className="flex space-x-2 pt-4">
                   <Button type="submit" disabled={isSubmitting}>
                     {isSubmitting ? 'Saving...' : (editingContact ? 'Update Contact' : 'Add Contact')}
                   </Button>
@@ -524,9 +527,9 @@ function ContactsPageContent() {
                   </Button>
                 </div>
               </form>
-            </CardContent>
-          </Card>
-        )}
+            </div>
+          </DialogContent>
+        </Dialog>
 
         {/* Contacts Table */}
         <Card>

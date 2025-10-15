@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authenticateUser } from '@/lib/auth';
 import Contact from '@/models/Contact';
+import Campaign from '@/models/Campaign';
 import connectDB from '@/lib/mongodb';
 
 // GET a specific contact
@@ -79,7 +80,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     // Update the contact
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const updateData: any = {};
-    
+
     if (email) updateData.email = email.toLowerCase().trim();
     if (contactData.firstName !== undefined) updateData.firstName = contactData.firstName?.trim();
     if (contactData.lastName !== undefined) updateData.lastName = contactData.lastName?.trim();
@@ -93,6 +94,32 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     if (contactData.source !== undefined) updateData.source = contactData.source?.trim();
     if (contactData.notes !== undefined) updateData.notes = contactData.notes?.trim();
     if (contactData.personalization !== undefined) updateData.personalization = contactData.personalization?.trim();
+    if (contactData.campaignId !== undefined) updateData.campaignId = contactData.campaignId || null;
+
+    // Handle campaign change - update campaign contactIds arrays
+    if (contactData.campaignId !== undefined) {
+      const oldCampaignId = existingContact.campaignId;
+      const newCampaignId = contactData.campaignId;
+
+      // If campaign changed, update both old and new campaign's contactIds
+      if (oldCampaignId?.toString() !== newCampaignId) {
+        // Remove from old campaign
+        if (oldCampaignId) {
+          await Campaign.findByIdAndUpdate(
+            oldCampaignId,
+            { $pull: { contactIds: id } }
+          );
+        }
+
+        // Add to new campaign
+        if (newCampaignId) {
+          await Campaign.findByIdAndUpdate(
+            newCampaignId,
+            { $addToSet: { contactIds: id } }
+          );
+        }
+      }
+    }
 
     const updatedContact = await Contact.findByIdAndUpdate(
       id,
