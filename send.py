@@ -264,9 +264,17 @@ while True:
             email_account_ids = campaign.get('emailAccountIds', [])
             email_account_count = len(email_account_ids)
 
-            # Get the count of contactIds
-            contact_ids = campaign.get('contactIds', [])
-            contact_count = len(contact_ids)
+            # Fetch unsent contacts for this campaign from database by campaignId
+            campaign_id = campaign["_id"]
+            campaign_contacts = list(contacts_collection.find({
+                "campaignId": campaign_id,
+                "sent": 0  # Only get contacts that haven't been sent to yet
+            }))
+            contact_count = len(campaign_contacts)
+
+            if contact_count == 0:
+                print("⚠️  No unsent contacts remaining for this campaign. Skipping.")
+                continue
 
             # Get or initialize the current email account index from campaign
             current_email_account_index = campaign.get('currentEmailAccountIndex', 0)
@@ -341,21 +349,17 @@ while True:
                 print("⚠️  No available email account. Skipping to next campaign.")
                 continue
 
-            # Determine current contact index based on sent count
+            # Get the first unsent contact (always use index 0 since we filtered for sent=0)
             if contact_count > 0:
-                current_contact_index = sent % contact_count
-                current_contact_id = contact_ids[current_contact_index]
+                contact = campaign_contacts[0]  # Always get first unsent contact
+                current_contact_id = contact["_id"]
 
-                # Query contact details
-                contact = contacts_collection.find_one({"_id": ObjectId(current_contact_id)})
-                if contact:
-                    print(f"Contact Email: {contact.get('email', 'N/A')}")
-                else:
-                    print("Contact not found in database")
+                print(f"Contact Email: {contact.get('email', 'N/A')}")
+                print(f"📬 Unsent contacts remaining: {contact_count}")
             else:
-                print("No contacts available for this campaign")
-                current_contact_index = None
+                print("No unsent contacts available for this campaign")
                 current_contact_id = None
+                contact = None
 
             # Prepare personalized email
             print("\n📧 EMAIL PERSONALIZATION:")
@@ -473,10 +477,20 @@ while True:
                 print(f"❌ Error storing sent email in database: {e}")
                 # Continue even if database storage fails
 
-            # Increment the sent count and rotate email account index
-            new_sent_count = sent + 1
+            # Increment the contact's sent count and rotate email account index
+            contact_sent_before = contact.get('sent', 0)
+            contacts_collection.update_one(
+                {"_id": current_contact_id},
+                {"$inc": {"sent": 1}}
+            )
+            print(f"\n📊 Contact sent count updated: {contact_sent_before} -> {contact_sent_before + 1}")
+            print(f"   Contact: {contact.get('email', 'N/A')}")
+
+            # Rotate email account index for next send
             next_email_account_index = (current_email_account_index + 1) % email_account_count if email_account_count > 0 else 0
 
+            # Update campaign stats and email account index
+            new_sent_count = sent + 1
             campaigns_collection.update_one(
                 {"_id": campaign["_id"]},
                 {"$set": {
@@ -484,7 +498,7 @@ while True:
                     "currentEmailAccountIndex": next_email_account_index
                 }}
             )
-            print(f"\n📊 Sent count updated: {sent} -> {new_sent_count}")
+            print(f"📈 Campaign total sent updated: {sent} -> {new_sent_count}")
             print(f"🔄 Email account index rotated: {current_email_account_index} -> {next_email_account_index}")
 
 

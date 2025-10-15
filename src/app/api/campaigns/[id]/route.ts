@@ -51,8 +51,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: 'Campaign not found' }, { status: 404 });
     }
 
-    // Get the actual contact count for this campaign from contactIds array
-    const contactCount = campaign.contactIds ? campaign.contactIds.length : 0;
+    // Get the actual contact count for this campaign by querying contacts collection
+    const contactCount = await Contact.countDocuments({
+      campaignId: campaign._id
+    });
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const campaignObj = campaign.toObject() as any;
@@ -151,16 +153,15 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     console.log(`🗑️  Deleting campaign ${id} and its associated contacts...`);
 
     // Count contacts to be deleted for logging
-    const contactCount = campaign.contactIds ? campaign.contactIds.length : 0;
+    const contactCount = await Contact.countDocuments({
+      campaignId: campaign._id
+    });
     console.log(`📊 Found ${contactCount} contacts associated with campaign ${id}`);
 
-    // Delete all contacts referenced by this campaign
-    let deleteContactsResult = { deletedCount: 0 };
-    if (campaign.contactIds && campaign.contactIds.length > 0) {
-      deleteContactsResult = await Contact.deleteMany({ 
-        _id: { $in: campaign.contactIds } 
-      });
-    }
+    // Delete all contacts that have this campaign's ID
+    const deleteContactsResult = await Contact.deleteMany({
+      campaignId: campaign._id
+    });
     console.log(`✅ Deleted ${deleteContactsResult.deletedCount} contacts`);
 
     // Delete the campaign

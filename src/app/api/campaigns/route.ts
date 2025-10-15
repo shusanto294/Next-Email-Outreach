@@ -60,18 +60,26 @@ export async function GET(req: NextRequest) {
     }
 
     await connectDB();
-    
+
     const campaigns = await Campaign.find({ userId: user._id })
       .populate('emailAccountIds', 'email provider fromName replyToEmail')
       .sort({ createdAt: -1 });
 
-    // Get contact counts for each campaign from contactIds array
-    const campaignsWithContactCounts = campaigns.map(campaign => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const campaignObj = campaign.toObject() as any;
-      campaignObj.contactCount = campaign.contactIds ? campaign.contactIds.length : 0;
-      return campaignObj;
-    });
+    // Get contact counts for each campaign by querying contacts collection
+    const campaignsWithContactCounts = await Promise.all(
+      campaigns.map(async (campaign) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const campaignObj = campaign.toObject() as any;
+
+        // Count contacts that have this campaign's ID
+        const contactCount = await Contact.countDocuments({
+          campaignId: campaign._id
+        });
+
+        campaignObj.contactCount = contactCount;
+        return campaignObj;
+      })
+    );
 
     return NextResponse.json({ campaigns: campaignsWithContactCounts });
   } catch (error) {

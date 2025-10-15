@@ -24,28 +24,21 @@ export async function GET(req: NextRequest) {
     // Build query
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const query: any = { userId: user._id };
-    
-    // If campaignId is provided, find contacts that are referenced by that campaign
+
+    // If campaignId is provided, filter contacts by campaignId
     if (campaignId) {
+      // Verify campaign exists and belongs to user
       const campaign = await Campaign.findOne({
         _id: campaignId,
         userId: user._id
       });
-      
+
       if (!campaign) {
         return NextResponse.json({ error: 'Campaign not found' }, { status: 404 });
       }
-      
-      // Only return contacts that are in the campaign's contactIds array
-      if (campaign.contactIds && campaign.contactIds.length > 0) {
-        query._id = { $in: campaign.contactIds };
-      } else {
-        // No contacts in this campaign, return empty result
-        return NextResponse.json({
-          contacts: [],
-          pagination: { page, limit, total: 0, pages: 0 }
-        });
-      }
+
+      // Filter contacts that have this campaignId
+      query.campaignId = campaignId;
     }
     
     if (status) {

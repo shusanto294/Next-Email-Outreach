@@ -77,9 +77,13 @@ export async function POST(req: NextRequest) {
         personalization: contact.personalization?.trim(),
         source: contact.source?.trim() || 'CSV Import',
         notes: contact.notes?.trim(),
+        sent: 0,
       };
 
-      // Note: We no longer set campaignId on individual contacts
+      // Set campaignId if provided
+      if (campaignId) {
+        contactData.campaignId = campaignId;
+      }
 
       validContacts.push(contactData);
     }
@@ -96,23 +100,9 @@ export async function POST(req: NextRequest) {
         importedCount += batch.length;
       }
 
-      // If campaignId is provided, add contact IDs to the campaign
-      if (campaignId && importedContacts.length > 0) {
+      // Set hasUpcomingSequence=true for all newly imported contacts
+      if (importedContacts.length > 0) {
         const contactIds = importedContacts.map(contact => contact._id);
-        
-        await Campaign.findByIdAndUpdate(
-          campaignId,
-          { 
-            $addToSet: { 
-              contactIds: { $each: contactIds } 
-            } 
-          },
-          { new: true }
-        );
-        
-        console.log(`Added ${contactIds.length} contact IDs to campaign ${campaignId}`);
-        
-        // Set hasUpcomingSequence=true for all newly imported contacts
         try {
           await Contact.updateMany(
             { _id: { $in: contactIds } },
@@ -122,6 +112,16 @@ export async function POST(req: NextRequest) {
         } catch (updateError) {
           console.error('Error setting hasUpcomingSequence for imported contacts:', updateError);
           // Don't fail the import if this update fails
+        }
+
+        // If campaignId is provided, verify the campaign exists
+        if (campaignId) {
+          const campaign = await Campaign.findById(campaignId);
+          if (campaign) {
+            console.log(`Imported ${contactIds.length} contacts with campaignId: ${campaignId}`);
+          } else {
+            console.warn(`Campaign ${campaignId} not found, but contacts were still imported with campaignId`);
+          }
         }
       }
     }

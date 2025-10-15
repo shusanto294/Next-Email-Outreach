@@ -2,6 +2,7 @@ import mongoose, { Document, Model, Schema } from 'mongoose';
 
 export interface IContact extends Document {
   userId: mongoose.Types.ObjectId;
+  campaignId?: mongoose.Types.ObjectId;
   email: string;
   firstName?: string;
   lastName?: string;
@@ -23,6 +24,7 @@ export interface IContact extends Document {
   status: 'active' | 'unsubscribed' | 'bounced' | 'complained' | 'do-not-contact';
   lastContacted?: Date;
   timesContacted: number;
+  sent: number;
   hasUpcomingSequence: boolean;
   notes?: string;
   createdAt: Date;
@@ -35,6 +37,11 @@ const ContactSchema = new Schema<IContact>(
       type: Schema.Types.ObjectId,
       ref: 'User',
       required: true,
+    },
+    campaignId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Campaign',
+      index: true,
     },
     email: {
       type: String,
@@ -140,6 +147,12 @@ const ContactSchema = new Schema<IContact>(
       default: 0,
       min: 0,
     },
+    sent: {
+      type: Number,
+      default: 0,
+      min: 0,
+      index: true,
+    },
     hasUpcomingSequence: {
       type: Boolean,
       default: false,
@@ -152,6 +165,7 @@ const ContactSchema = new Schema<IContact>(
   },
   {
     timestamps: true,
+    versionKey: false,  // Disable __v field
   }
 );
 
