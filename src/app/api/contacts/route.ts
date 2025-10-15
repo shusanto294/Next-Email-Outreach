@@ -15,6 +15,7 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const campaignId = searchParams.get('campaignId');
     const status = searchParams.get('status');
+    const sentFilter = searchParams.get('sent');
     const page = parseInt(searchParams.get('page') || '1');
     const limit = parseInt(searchParams.get('limit') || '50');
     const search = searchParams.get('search');
@@ -45,6 +46,15 @@ export async function GET(req: NextRequest) {
       query.status = status;
     }
 
+    // Filter by sent status: 'sent' means sent > 0, 'not-sent' means sent = 0
+    if (sentFilter) {
+      if (sentFilter === 'sent') {
+        query.sent = { $gt: 0 };
+      } else if (sentFilter === 'not-sent') {
+        query.sent = 0;
+      }
+    }
+
     if (search) {
       query.$or = [
         { email: { $regex: search, $options: 'i' } },
@@ -57,8 +67,9 @@ export async function GET(req: NextRequest) {
     // Get total count
     const total = await Contact.countDocuments(query);
 
-    // Get contacts with pagination
+    // Get contacts with pagination and populate campaign data
     const contacts = await Contact.find(query)
+      .populate('campaignId', 'name')
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(limit);

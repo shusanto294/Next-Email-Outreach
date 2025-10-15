@@ -141,6 +141,7 @@ export default function EditCampaignPage() {
   const [contactsLoading, setContactsLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalContacts, setTotalContacts] = useState(0);
+  const [sentFilter, setSentFilter] = useState('');
   const [activeTab, setActiveTab] = useState<'details' | 'email' | 'contacts' | 'schedule' | 'launch'>('details');
 
   const CONTACTS_PER_PAGE = 10;
@@ -187,7 +188,7 @@ export default function EditCampaignPage() {
       fetchCampaignContacts(1);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, campaign]);
+  }, [activeTab, campaign, sentFilter]);
 
   const fetchData = async () => {
     const token = localStorage.getItem('token');
@@ -277,13 +278,23 @@ export default function EditCampaignPage() {
 
   const fetchCampaignContacts = async (page: number = 1) => {
     if (!campaign) return;
-    
+
     setContactsLoading(true);
     const token = localStorage.getItem('token');
-    
+
     try {
+      const params = new URLSearchParams({
+        campaignId: campaignId,
+        page: page.toString(),
+        limit: CONTACTS_PER_PAGE.toString()
+      });
+
+      if (sentFilter) {
+        params.append('sent', sentFilter);
+      }
+
       const response = await fetch(
-        `/api/contacts?campaignId=${campaignId}&page=${page}&limit=${CONTACTS_PER_PAGE}`,
+        `/api/contacts?${params}`,
         {
           headers: { 'Authorization': `Bearer ${token}` },
         }
@@ -1076,8 +1087,19 @@ export default function EditCampaignPage() {
               <div className="mt-8">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-lg font-medium text-gray-900">Campaign Contacts</h3>
-                  <div className="text-sm text-gray-500">
-                    {totalContacts} contact{totalContacts !== 1 ? 's' : ''} total
+                  <div className="flex items-center space-x-4">
+                    <select
+                      value={sentFilter}
+                      onChange={(e) => setSentFilter(e.target.value)}
+                      className="rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    >
+                      <option value="">All Contacts</option>
+                      <option value="sent">Sent</option>
+                      <option value="not-sent">Not Sent</option>
+                    </select>
+                    <div className="text-sm text-gray-500">
+                      {totalContacts} contact{totalContacts !== 1 ? 's' : ''} total
+                    </div>
                   </div>
                 </div>
 

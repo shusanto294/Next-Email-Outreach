@@ -26,6 +26,7 @@ interface Contact {
     _id: string;
     name: string;
   };
+  sent: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -59,7 +60,7 @@ function ContactsPageContent() {
   const [message, setMessage] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCampaign, setSelectedCampaign] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
+  const [sentFilter, setSentFilter] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
 
@@ -78,7 +79,7 @@ function ContactsPageContent() {
     }
     fetchContacts();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchTerm, selectedCampaign, statusFilter, currentPage]);
+  }, [searchTerm, selectedCampaign, sentFilter, currentPage]);
 
   const checkAuth = async () => {
     const token = localStorage.getItem('token');
@@ -137,7 +138,7 @@ function ContactsPageContent() {
 
       if (searchTerm) params.append('search', searchTerm);
       if (selectedCampaign) params.append('campaignId', selectedCampaign);
-      if (statusFilter) params.append('status', statusFilter);
+      if (sentFilter) params.append('sent', sentFilter);
 
       const response = await fetch(`/api/contacts?${params}`, {
         headers: {
@@ -338,24 +339,21 @@ function ContactsPageContent() {
               </select>
 
               <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
+                value={sentFilter}
+                onChange={(e) => setSentFilter(e.target.value)}
                 className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               >
-                <option value="">All Statuses</option>
-                <option value="active">Active</option>
-                <option value="unsubscribed">Unsubscribed</option>
-                <option value="bounced">Bounced</option>
-                <option value="complained">Complained</option>
-                <option value="do-not-contact">Do Not Contact</option>
+                <option value="">All Contacts</option>
+                <option value="sent">Sent</option>
+                <option value="not-sent">Not Sent</option>
               </select>
 
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 onClick={() => {
                   setSearchTerm('');
                   setSelectedCampaign('');
-                  setStatusFilter('');
+                  setSentFilter('');
                   setCurrentPage(1);
                 }}
               >
@@ -556,7 +554,7 @@ function ContactsPageContent() {
                       <th className="text-left p-3 font-medium">Contact</th>
                       <th className="text-left p-3 font-medium">Company</th>
                       <th className="text-left p-3 font-medium">Campaign</th>
-                      <th className="text-left p-3 font-medium">Status</th>
+                      <th className="text-left p-3 font-medium">Sent Status</th>
                       <th className="text-left p-3 font-medium">Actions</th>
                     </tr>
                   </thead>
@@ -602,9 +600,33 @@ function ContactsPageContent() {
                           )}
                         </td>
                         <td className="p-3">
-                          <span className={`px-2 py-1 text-xs rounded ${getStatusBadge(contact.status)}`}>
-                            {contact.status.replace('-', ' ')}
-                          </span>
+                          <div className="flex items-center justify-center">
+                            {contact.sent > 0 ? (
+                              <svg
+                                className="w-5 h-5 text-green-500"
+                                fill="currentColor"
+                                viewBox="0 0 20 20"
+                              >
+                                <path
+                                  fillRule="evenodd"
+                                  d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                                  clipRule="evenodd"
+                                />
+                              </svg>
+                            ) : (
+                              <svg
+                                className="w-5 h-5"
+                                fill="#ddd"
+                                viewBox="0 0 20 20"
+                              >
+                                <path
+                                  fillRule="evenodd"
+                                  d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                                  clipRule="evenodd"
+                                />
+                              </svg>
+                            )}
+                          </div>
                         </td>
                         <td className="p-3">
                           <div className="flex space-x-2">
