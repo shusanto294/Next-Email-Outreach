@@ -26,7 +26,7 @@ export async function PUT(req: NextRequest) {
       try {
         // Test if timezone is valid by trying to format a date with it
         new Intl.DateTimeFormat('en-US', { timeZone: timezone });
-      } catch (error) {
+      } catch {
         return NextResponse.json({ error: 'Invalid timezone' }, { status: 400 });
       }
     }
@@ -34,6 +34,7 @@ export async function PUT(req: NextRequest) {
     await connectDB();
 
     // Prepare update object
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const updateData: any = {};
     
     if (timezone !== undefined) {

@@ -55,8 +55,8 @@ export default function LoginPage() {
 
       // Redirect to dashboard
       router.push('/dashboard');
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Login failed');
     } finally {
       setIsLoading(false);
     }
@@ -124,7 +124,7 @@ export default function LoginPage() {
 
             <div className="mt-4 text-center">
               <p className="text-sm text-gray-600">
-                Don't have an account?{' '}
+                Don&apos;t have an account?{' '}
                 <Link href="/auth/register" className="text-blue-600 hover:text-blue-500">
                   Sign up
                 </Link>

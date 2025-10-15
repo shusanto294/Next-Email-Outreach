@@ -32,6 +32,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Original email not found' }, { status: 404 });
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const emailAccount = originalEmail.emailAccountId as any;
     if (!emailAccount) {
       return NextResponse.json({ error: 'Email account not found' }, { status: 404 });
@@ -65,6 +66,7 @@ export async function POST(req: NextRequest) {
         to: to,
         subject: subject,
         text: content,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         headers: {} as any,
       };
 
@@ -121,7 +123,7 @@ export async function POST(req: NextRequest) {
           messageId: messageId,
         }
       }, { status: 201 });
-    } catch (smtpError: any) {
+    } catch (smtpError: unknown) {
       console.error('SMTP sending failed:', smtpError);
 
       // Save as failed email
@@ -150,7 +152,7 @@ export async function POST(req: NextRequest) {
 
       return NextResponse.json({
         error: 'Failed to send email via SMTP',
-        details: smtpError.message
+        details: smtpError instanceof Error ? smtpError.message : 'Unknown SMTP error'
       }, { status: 500 });
     }
   } catch (error) {

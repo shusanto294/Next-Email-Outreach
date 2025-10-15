@@ -98,8 +98,8 @@ export async function loginUser(email: string, password: string): Promise<{ user
     throw new Error('Invalid credentials');
   }
 
-  const token = generateToken(user._id.toString());
-  
+  const token = generateToken(String(user._id));
+
   // Remove password from user object
   const userWithoutPassword = await User.findById(user._id).select('-password');
   

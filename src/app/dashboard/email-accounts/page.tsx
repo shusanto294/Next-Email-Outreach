@@ -28,9 +28,7 @@ const createEmailAccountSchema = (isEditing: boolean = false) => z.object({
   dailyLimit: z.coerce.number().min(1).max(1000).default(30),
 });
 
-const emailAccountSchema = createEmailAccountSchema();
-
-type EmailAccountForm = z.infer<typeof emailAccountSchema>;
+type EmailAccountForm = z.infer<ReturnType<typeof createEmailAccountSchema>>;
 
 interface EmailAccount {
   _id: string;
@@ -55,6 +53,7 @@ export default function EmailAccountsPage() {
   const [editingAccount, setEditingAccount] = useState<EmailAccount | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [testResults, setTestResults] = useState<{smtp?: any, imap?: any} | null>(null);
   const [error, setError] = useState('');
   const router = useRouter();
@@ -78,10 +77,9 @@ export default function EmailAccountsPage() {
     },
   });
 
-  const provider = watch('provider');
-
   useEffect(() => {
     fetchEmailAccounts();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fetchEmailAccounts = async () => {
@@ -144,8 +142,8 @@ export default function EmailAccountsPage() {
       }
 
       setTestResults(result);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Connection test failed');
     } finally {
       setIsTesting(false);
     }
@@ -189,8 +187,8 @@ export default function EmailAccountsPage() {
       
       reset();
       setTestResults(null);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to save email account');
     } finally {
       setIsSubmitting(false);
     }
@@ -205,6 +203,7 @@ export default function EmailAccountsPage() {
     // Populate form with account data
     reset({
       email: account.email,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       provider: account.provider as any,
       fromName: account.fromName || '',
       smtpHost: account.smtpHost,
@@ -365,7 +364,7 @@ export default function EmailAccountsPage() {
                         // Update form values with presets using setValue
                         Object.entries(presets).forEach(([key, value]) => {
                           if (key in watch() && value !== undefined) {
-                            // @ts-ignore
+                            // @ts-expect-error - Dynamic key access for form values
                             setValue(key, value);
                           }
                         });

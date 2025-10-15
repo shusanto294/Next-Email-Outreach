@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import DashboardHeader from '@/components/DashboardHeader';
 import { Button } from '@/components/ui/button';
@@ -13,9 +13,6 @@ import {
   Send,
   Inbox,
   Search,
-  Star,
-  Trash2,
-  Archive,
   ChevronLeft,
   ChevronRight,
   RefreshCw,
@@ -50,13 +47,13 @@ interface Email {
   };
 }
 
-export default function UniboxPage() {
+function UniboxPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [emails, setEmails] = useState<Email[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
-  const [selectedEmail, setSelectedEmail] = useState<Email | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [emailDetails, setEmailDetails] = useState<any>(null);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -64,8 +61,8 @@ export default function UniboxPage() {
   const [totalReceived, setTotalReceived] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState<'all' | 'sent' | 'received'>('received');
-  const [category, setCategory] = useState<string>('');
-  const [isReadFilter, setIsReadFilter] = useState<string>('');
+  const [category] = useState<string>('');
+  const [isReadFilter] = useState<string>('');
   const [showReplyModal, setShowReplyModal] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [replySubject, setReplySubject] = useState('');
@@ -82,6 +79,7 @@ export default function UniboxPage() {
 
   useEffect(() => {
     fetchEmails();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, filter, category, isReadFilter]);
 
   const fetchEmails = async () => {
@@ -143,7 +141,6 @@ export default function UniboxPage() {
 
       const data = await response.json();
       setEmailDetails(data.email);
-      setSelectedEmail(email);
       setShowDetailsModal(true);
 
       // Update the email in the list if it was marked as seen
@@ -218,7 +215,7 @@ export default function UniboxPage() {
         throw new Error(errorData.error || 'Failed to send reply');
       }
 
-      const data = await response.json();
+      await response.json();
 
       setShowReplyModal(false);
       setReplySubject('');
@@ -238,14 +235,14 @@ export default function UniboxPage() {
 
       // Refresh emails to show the sent reply
       fetchEmails();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error sending reply:', error);
 
       // Show error alert with SweetAlert2
       Swal.fire({
         icon: 'error',
         title: 'Failed to Send',
-        text: error.message || 'Failed to send reply. Please try again.',
+        text: error instanceof Error ? error.message : 'Failed to send reply. Please try again.',
         confirmButtonText: 'Close',
         confirmButtonColor: '#ef4444',
       });
@@ -286,7 +283,7 @@ export default function UniboxPage() {
   const getEmailDisplayName = (email: Email) => {
     if (email.type === 'sent') {
       if (email.contactId) {
-        const { firstName, lastName, company } = email.contactId;
+        const { firstName, lastName } = email.contactId;
         const name = [firstName, lastName].filter(Boolean).join(' ');
         return name || email.to;
       }
@@ -471,7 +468,6 @@ export default function UniboxPage() {
                     onClick={() => {
                       setShowDetailsModal(false);
                       setEmailDetails(null);
-                      setSelectedEmail(null);
                     }}
                     className="text-gray-500 hover:text-gray-700"
                   >
@@ -653,5 +649,17 @@ export default function UniboxPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function UniboxPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-lg">Loading...</div>
+      </div>
+    }>
+      <UniboxPageContent />
+    </Suspense>
   );
 }

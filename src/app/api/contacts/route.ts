@@ -22,6 +22,7 @@ export async function GET(req: NextRequest) {
     await connectDB();
 
     // Build query
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const query: any = { userId: user._id };
     
     // If campaignId is provided, find contacts that are referenced by that campaign
@@ -131,6 +132,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Create new contact
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const contactPayload: any = {
       userId: user._id,
       email: email.toLowerCase().trim(),
@@ -203,6 +205,7 @@ export async function PATCH(req: NextRequest) {
     }
 
     // Find all contacts for this campaign that currently have hasUpcomingSequence=false
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const query: any = {
       userId: user._id,
       hasUpcomingSequence: false

@@ -36,18 +36,25 @@ export async function POST(req: NextRequest) {
       }))
     });
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('❌ Debug endpoint error:', error);
-    console.error('Error details:', {
-      name: error.name,
-      message: error.message,
-      stack: error.stack
-    });
-    
-    return NextResponse.json({ 
-      error: 'Debug failed', 
-      details: error.message,
-      errorName: error.name
+    if (error instanceof Error) {
+      console.error('Error details:', {
+        name: error.name,
+        message: error.message,
+        stack: error.stack
+      });
+
+      return NextResponse.json({
+        error: 'Debug failed',
+        details: error.message,
+        errorName: error.name
+      }, { status: 500 });
+    }
+
+    return NextResponse.json({
+      error: 'Debug failed',
+      details: 'Unknown error'
     }, { status: 500 });
   }
 }

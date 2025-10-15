@@ -24,7 +24,10 @@
       "Bash(npx eslint:*)",
       "Bash(pip3 install:*)",
       "Bash(python3:*)",
-      "Bash(lsof:*)"
+      "Bash(lsof:*)",
+      "Bash(npm ls:*)",
+      "Bash(npm remove:*)",
+      "Bash(NODE_ENV=production npm run build)"
     ],
     "deny": []
   }

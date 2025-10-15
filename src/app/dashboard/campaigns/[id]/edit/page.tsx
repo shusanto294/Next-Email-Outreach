@@ -166,7 +166,6 @@ export default function EditCampaignPage() {
 
   const {
     register,
-    control,
     handleSubmit,
     formState: { errors },
     watch,
@@ -176,10 +175,9 @@ export default function EditCampaignPage() {
     resolver: zodResolver(campaignSchema),
   });
 
-  const isActive = watch('isActive');
-
   useEffect(() => {
     fetchData();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [campaignId]);
 
   // Fetch contacts when switching to contacts tab or when campaign is loaded
@@ -187,6 +185,7 @@ export default function EditCampaignPage() {
     if (activeTab === 'contacts' && campaign) {
       fetchCampaignContacts(1);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, campaign]);
 
   const fetchData = async () => {
@@ -446,8 +445,9 @@ export default function EditCampaignPage() {
       for (let i = 1; i < lines.length; i++) {
         const line = lines[i].trim();
         if (!line) continue;
-        
+
         const values = parseCSVLine(line);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const contact: any = {};
 
         Object.entries(columnMapping).forEach(([contactField, csvColumn]) => {
@@ -492,7 +492,7 @@ export default function EditCampaignPage() {
         let errorData;
         try {
           errorData = JSON.parse(responseText);
-        } catch (e) {
+        } catch {
           throw new Error(`Import failed with status ${response.status}. Response: ${responseText}`);
         }
         throw new Error(errorData.error || 'Failed to import contacts');
@@ -504,7 +504,7 @@ export default function EditCampaignPage() {
       let responseData;
       try {
         responseData = JSON.parse(responseText);
-      } catch (e) {
+      } catch {
         console.error('Failed to parse JSON response:', responseText);
         throw new Error('Invalid response format from server');
       }
@@ -542,8 +542,8 @@ export default function EditCampaignPage() {
       if (activeTab === 'contacts') {
         await fetchCampaignContacts(currentPage);
       }
-    } catch (error: any) {
-      setError(error.message);
+    } catch (error: unknown) {
+      setError(error instanceof Error ? error.message : 'Import failed');
     } finally {
       setIsUploading(false);
     }
@@ -726,6 +726,7 @@ export default function EditCampaignPage() {
               <button
                 key={tab.key}
                 type="button"
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 onClick={() => setActiveTab(tab.key as any)}
                 className={`py-2 px-1 border-b-2 font-medium text-sm flex items-center space-x-2 ${
                   activeTab === tab.key

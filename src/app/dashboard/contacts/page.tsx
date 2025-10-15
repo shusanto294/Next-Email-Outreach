@@ -1,11 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Plus, Eye, Edit, Trash2, Search, Filter, Mail, Building, Phone, Globe, Linkedin } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, Mail, Building, Filter } from 'lucide-react';
 import DashboardHeader from '@/components/DashboardHeader';
 
 interface Contact {
@@ -35,7 +35,7 @@ interface Campaign {
   name: string;
 }
 
-export default function ContactsPage() {
+function ContactsPageContent() {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -68,6 +68,7 @@ export default function ContactsPage() {
 
   useEffect(() => {
     checkAuth();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -76,6 +77,7 @@ export default function ContactsPage() {
       setSelectedCampaign(campaignIdFromUrl);
     }
     fetchContacts();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchTerm, selectedCampaign, statusFilter, currentPage]);
 
   const checkAuth = async () => {
@@ -98,7 +100,7 @@ export default function ContactsPage() {
       }
 
       await Promise.all([fetchContacts(), fetchCampaigns()]);
-    } catch (error) {
+    } catch {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
       router.push('/auth/login');
@@ -188,8 +190,8 @@ export default function ContactsPage() {
       setEditingContact(null);
       resetForm();
       await fetchContacts();
-    } catch (error: any) {
-      setMessage(error.message);
+    } catch (error: unknown) {
+      setMessage(error instanceof Error ? error.message : 'Failed to save contact');
     } finally {
       setIsSubmitting(false);
     }
@@ -236,8 +238,8 @@ export default function ContactsPage() {
       const data = await response.json();
       setMessage(data.message);
       await fetchContacts();
-    } catch (error: any) {
-      setMessage(error.message);
+    } catch (error: unknown) {
+      setMessage(error instanceof Error ? error.message : 'Failed to delete contact');
     }
   };
 
@@ -659,5 +661,17 @@ export default function ContactsPage() {
         </Card>
       </div>
     </div>
+  );
+}
+
+export default function ContactsPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-lg">Loading...</div>
+      </div>
+    }>
+      <ContactsPageContent />
+    </Suspense>
   );
 }

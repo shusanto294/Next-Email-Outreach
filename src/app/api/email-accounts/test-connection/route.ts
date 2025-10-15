@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { z } from 'zod';
+import { z, ZodError } from 'zod';
 import { authenticateUser } from '@/lib/auth';
 import { testBothConnections } from '@/lib/email-test';
 
@@ -47,8 +47,8 @@ export async function POST(req: NextRequest) {
       smtp: results.smtp,
       imap: results.imap,
     });
-  } catch (error: any) {
-    if (error.name === 'ZodError') {
+  } catch (error: unknown) {
+    if (error instanceof ZodError) {
       return NextResponse.json(
         { error: 'Validation error', details: error.errors },
         { status: 400 }

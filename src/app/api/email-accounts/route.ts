@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { z } from 'zod';
+import { z, ZodError } from 'zod';
 import { authenticateUser } from '@/lib/auth';
 import EmailAccount from '@/models/EmailAccount';
 import connectDB from '@/lib/mongodb';
@@ -117,8 +117,8 @@ export async function POST(req: NextRequest) {
       message: 'Email account added successfully',
       emailAccount: accountResponse,
     }, { status: 201 });
-  } catch (error: any) {
-    if (error.name === 'ZodError') {
+  } catch (error: unknown) {
+    if (error instanceof ZodError) {
       return NextResponse.json(
         { error: 'Validation error', details: error.errors },
         { status: 400 }

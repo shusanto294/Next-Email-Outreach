@@ -76,6 +76,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       return NextResponse.json({ error: 'Only received emails can be updated' }, { status: 400 });
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const updateData: any = {};
 
     switch (action) {

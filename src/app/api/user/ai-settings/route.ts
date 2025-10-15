@@ -56,6 +56,7 @@ export async function PUT(req: NextRequest) {
     }
 
     // Prepare update object - only include fields that are provided and non-empty
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const updateData: any = {};
     
     if (aiProvider !== undefined) {

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { z } from 'zod';
+import { z, ZodError } from 'zod';
 import { loginUser } from '@/lib/auth';
 
 const loginSchema = z.object({
@@ -28,15 +28,15 @@ export async function POST(req: NextRequest) {
       },
       token,
     });
-  } catch (error: any) {
-    if (error.name === 'ZodError') {
+  } catch (error: unknown) {
+    if (error instanceof ZodError) {
       return NextResponse.json(
         { error: 'Validation error', details: error.errors },
         { status: 400 }
       );
     }
-    
-    if (error.message === 'Invalid credentials') {
+
+    if (error instanceof Error && error.message === 'Invalid credentials') {
       return NextResponse.json(
         { error: 'Invalid credentials' },
         { status: 401 }

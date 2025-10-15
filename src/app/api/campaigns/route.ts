@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { z } from 'zod';
+import { z, ZodError } from 'zod';
 import { authenticateUser } from '@/lib/auth';
 import Campaign from '@/models/Campaign';
 import EmailAccount from '@/models/EmailAccount';
@@ -67,7 +67,8 @@ export async function GET(req: NextRequest) {
 
     // Get contact counts for each campaign from contactIds array
     const campaignsWithContactCounts = campaigns.map(campaign => {
-      const campaignObj = campaign.toObject();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const campaignObj = campaign.toObject() as any;
       campaignObj.contactCount = campaign.contactIds ? campaign.contactIds.length : 0;
       return campaignObj;
     });
@@ -92,11 +93,11 @@ export async function POST(req: NextRequest) {
 
     const data = await req.json();
     console.log('Request data:', data);
-    console.log('Contacts in request:', data.contacts?.length, data.contacts);
-    
+    console.log('Contact IDs in request:', data.contactIds?.length, data.contactIds);
+
     const validatedData = campaignSchema.parse(data);
     console.log('Data validation passed');
-    console.log('Validated contacts:', validatedData.contacts?.length, validatedData.contacts);
+    console.log('Validated contact IDs:', validatedData.contactIds?.length, validatedData.contactIds);
 
     await connectDB();
     console.log('Database connected');
@@ -171,9 +172,9 @@ export async function POST(req: NextRequest) {
       message: 'Campaign created successfully',
       campaign,
     }, { status: 201 });
-  } catch (error: any) {
-    if (error.name === 'ZodError') {
-      console.error('Zod validation error:', error.errors);
+  } catch (error: unknown) {
+    if (error instanceof ZodError) {
+      console.error('Zod validation error:', error);
       return NextResponse.json(
         { error: 'Validation error', details: error.errors },
         { status: 400 }
@@ -181,13 +182,15 @@ export async function POST(req: NextRequest) {
     }
 
     console.error('Create campaign error:', error);
-    console.error('Error stack:', error.stack);
-    console.error('Error name:', error.name);
-    console.error('Error message:', error.message);
-    
-    return NextResponse.json({ 
-      error: 'Internal server error', 
-      details: process.env.NODE_ENV === 'development' ? error.message : undefined 
+    if (error instanceof Error) {
+      console.error('Error stack:', error.stack);
+      console.error('Error name:', error.name);
+      console.error('Error message:', error.message);
+    }
+
+    return NextResponse.json({
+      error: 'Internal server error',
+      details: process.env.NODE_ENV === 'development' && error instanceof Error ? error.message : undefined 
     }, { status: 500 });
   }
 }

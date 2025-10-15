@@ -24,10 +24,13 @@ export async function GET(req: NextRequest) {
     const skip = (page - 1) * limit;
 
     // Build filters
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const baseFilter: any = { userId: user._id };
 
     // Prepare queries for sent and received emails
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let sentEmails: any[] = [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let receivedEmails: any[] = [];
     let totalSent = 0;
     let totalReceived = 0;

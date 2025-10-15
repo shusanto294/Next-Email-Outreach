@@ -59,7 +59,7 @@ export default function DashboardPage() {
         setOpenaiApiKey(data.user.openaiApiKey || '');
         setOpenaiModel(data.user.openaiModel || 'gpt-3.5-turbo');
         setTimezone(data.user.timezone || 'UTC');
-      } catch (error) {
+      } catch {
         localStorage.removeItem('token');
         localStorage.removeItem('user');
         router.push('/auth/login');
@@ -106,7 +106,7 @@ export default function DashboardPage() {
       setUser(data.user);
       setSaveMessage('Open AI settings saved successfully!');
       setTimeout(() => setSaveMessage(''), 3000);
-    } catch (error) {
+    } catch {
       setSaveMessage('Failed to save Open AI settings. Please try again.');
       setTimeout(() => setSaveMessage(''), 3000);
     } finally {
@@ -140,7 +140,7 @@ export default function DashboardPage() {
       setUser(data.user);
       setSettingsMessage('User settings saved successfully!');
       setTimeout(() => setSettingsMessage(''), 3000);
-    } catch (error) {
+    } catch {
       setSettingsMessage('Failed to save user settings. Please try again.');
       setTimeout(() => setSettingsMessage(''), 3000);
     } finally {

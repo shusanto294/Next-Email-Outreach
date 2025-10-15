@@ -77,6 +77,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     }
 
     // Update the contact
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const updateData: any = {};
     
     if (email) updateData.email = email.toLowerCase().trim();

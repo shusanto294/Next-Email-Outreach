@@ -76,16 +76,23 @@ export async function POST(req: NextRequest) {
       }
     }, { status: 201 });
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('❌ Simple campaign creation error:', error);
-    console.error('Error name:', error.name);
-    console.error('Error message:', error.message);
-    console.error('Error stack:', error.stack);
-    
-    return NextResponse.json({ 
-      error: 'Simple campaign creation failed', 
-      details: error.message,
-      errorType: error.name
+    if (error instanceof Error) {
+      console.error('Error name:', error.name);
+      console.error('Error message:', error.message);
+      console.error('Error stack:', error.stack);
+
+      return NextResponse.json({
+        error: 'Simple campaign creation failed',
+        details: error.message,
+        errorType: error.name
+      }, { status: 500 });
+    }
+
+    return NextResponse.json({
+      error: 'Simple campaign creation failed',
+      details: 'Unknown error'
     }, { status: 500 });
   }
 }

@@ -47,10 +47,10 @@ export async function testSMTPConnection(config: SMTPConfig): Promise<Connection
       success: true,
       details: 'SMTP connection successful'
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
     return {
       success: false,
-      error: error.message || 'SMTP connection failed',
+      error: error instanceof Error ? error.message : 'SMTP connection failed',
       details: `Failed to connect to ${config.host}:${config.port}`
     };
   }
@@ -76,7 +76,7 @@ export async function testIMAPConnection(config: IMAPConfig): Promise<Connection
           resolved = true;
           try {
             imap.end();
-          } catch (e) {
+          } catch {
             // Ignore cleanup errors
           }
         }
@@ -123,10 +123,10 @@ export async function testIMAPConnection(config: IMAPConfig): Promise<Connection
       }, 15000);
 
       imap.connect();
-    } catch (error: any) {
+    } catch (error: unknown) {
       resolve({
         success: false,
-        error: error.message || 'IMAP connection failed',
+        error: error instanceof Error ? error.message : 'IMAP connection failed',
         details: `Failed to connect to ${config.host}:${config.port}`
       });
     }

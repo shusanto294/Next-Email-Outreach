@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { z } from 'zod';
+import { z, ZodError } from 'zod';
 import { authenticateUser } from '@/lib/auth';
 import Campaign from '@/models/Campaign';
 import Contact from '@/models/Contact';
@@ -54,7 +54,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     // Get the actual contact count for this campaign from contactIds array
     const contactCount = campaign.contactIds ? campaign.contactIds.length : 0;
 
-    const campaignObj = campaign.toObject();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const campaignObj = campaign.toObject() as any;
     campaignObj.contactCount = contactCount;
 
     return NextResponse.json({ campaign: campaignObj });
@@ -112,9 +113,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       message: 'Campaign updated successfully',
       campaign,
     });
-  } catch (error: any) {
-    if (error.name === 'ZodError') {
-      console.error('Zod validation error:', error.errors);
+  } catch (error: unknown) {
+    if (error instanceof ZodError) {
+      console.error('Zod validation error:', error);
       return NextResponse.json(
         { error: 'Validation error', details: error.errors },
         { status: 400 }

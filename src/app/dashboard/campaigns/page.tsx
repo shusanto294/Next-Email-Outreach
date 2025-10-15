@@ -3,8 +3,8 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Plus, Mail, Users, BarChart3, Trash2, Edit } from 'lucide-react';
+import { Card, CardContent } from '@/components/ui/card';
+import { Plus, Mail, Trash2, Edit } from 'lucide-react';
 import DashboardHeader from '@/components/DashboardHeader';
 
 interface Campaign {
@@ -62,6 +62,7 @@ export default function CampaignsPage() {
 
   useEffect(() => {
     fetchCampaigns();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fetchCampaigns = async () => {
