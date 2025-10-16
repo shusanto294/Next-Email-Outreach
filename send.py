@@ -12,7 +12,7 @@ from openai import OpenAI
 # Force unbuffered output
 sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', buffering=1)
 
-wait_time = 1  # Wait 60 seconds between cycles
+wait_time = 60  # Wait 60 seconds between cycles
 
 load_dotenv('.env.local')
 

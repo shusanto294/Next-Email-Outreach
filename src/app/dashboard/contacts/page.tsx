@@ -64,6 +64,12 @@ function ContactsPageContent() {
   const [sentFilter, setSentFilter] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [selectedContacts, setSelectedContacts] = useState<string[]>([]);
+  const [selectAllFiltered, setSelectAllFiltered] = useState(false);
+  const [totalContacts, setTotalContacts] = useState(0);
+  const [showBulkActions, setShowBulkActions] = useState(false);
+  const [bulkActionCampaign, setBulkActionCampaign] = useState('');
+  const [isBulkProcessing, setIsBulkProcessing] = useState(false);
 
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -154,6 +160,7 @@ function ContactsPageContent() {
       const data = await response.json();
       setContacts(data.contacts);
       setTotalPages(data.pagination.pages);
+      setTotalContacts(data.pagination.total);
     } catch (error) {
       console.error('Error fetching contacts:', error);
       setMessage('Failed to fetch contacts');
@@ -278,6 +285,167 @@ function ContactsPageContent() {
       'do-not-contact': 'bg-gray-100 text-gray-800'
     };
     return colors[status as keyof typeof colors] || 'bg-gray-100 text-gray-800';
+  };
+
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      // Ask if user wants to select all filtered results
+      if (totalContacts > contacts.length) {
+        const selectAll = confirm(
+          `Do you want to select all ${totalContacts} contacts matching your current filters?\n\n` +
+          `Click OK to select all ${totalContacts} contacts, or Cancel to select only the ${contacts.length} contacts on this page.`
+        );
+
+        if (selectAll) {
+          setSelectAllFiltered(true);
+          setSelectedContacts(contacts.map(c => c._id));
+        } else {
+          setSelectAllFiltered(false);
+          setSelectedContacts(contacts.map(c => c._id));
+        }
+      } else {
+        setSelectAllFiltered(false);
+        setSelectedContacts(contacts.map(c => c._id));
+      }
+    } else {
+      setSelectedContacts([]);
+      setSelectAllFiltered(false);
+    }
+  };
+
+  const handleSelectContact = (contactId: string, checked: boolean) => {
+    if (checked) {
+      setSelectedContacts([...selectedContacts, contactId]);
+    } else {
+      setSelectedContacts(selectedContacts.filter(id => id !== contactId));
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedContacts.length === 0 && !selectAllFiltered) return;
+
+    const count = selectAllFiltered ? totalContacts : selectedContacts.length;
+    if (!confirm(`Are you sure you want to delete ${count} contact(s)?`)) {
+      return;
+    }
+
+    setIsBulkProcessing(true);
+    const token = localStorage.getItem('token');
+
+    try {
+      if (selectAllFiltered) {
+        // Delete all matching filters
+        const response = await fetch('/api/contacts/bulk', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            action: 'delete',
+            filters: {
+              campaignId: selectedCampaign,
+              sent: sentFilter,
+              search: searchTerm,
+            }
+          }),
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to delete contacts');
+        }
+
+        setMessage(data.message);
+      } else {
+        // Delete selected contacts
+        const deletePromises = selectedContacts.map(contactId =>
+          fetch(`/api/contacts/${contactId}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${token}` },
+          })
+        );
+
+        await Promise.all(deletePromises);
+        setMessage(`Successfully deleted ${selectedContacts.length} contact(s)`);
+      }
+
+      setSelectedContacts([]);
+      setSelectAllFiltered(false);
+      await fetchContacts();
+    } catch (error) {
+      console.error('Bulk delete error:', error);
+      setMessage('Failed to delete some contacts');
+    } finally {
+      setIsBulkProcessing(false);
+    }
+  };
+
+  const handleBulkMoveCampaign = async () => {
+    if ((selectedContacts.length === 0 && !selectAllFiltered) || !bulkActionCampaign) return;
+
+    const count = selectAllFiltered ? totalContacts : selectedContacts.length;
+    if (!confirm(`Move ${count} contact(s) to the selected campaign?`)) {
+      return;
+    }
+
+    setIsBulkProcessing(true);
+    const token = localStorage.getItem('token');
+
+    try {
+      if (selectAllFiltered) {
+        // Move all matching filters
+        const response = await fetch('/api/contacts/bulk', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            action: 'move',
+            campaignId: bulkActionCampaign,
+            filters: {
+              campaignId: selectedCampaign,
+              sent: sentFilter,
+              search: searchTerm,
+            }
+          }),
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to move contacts');
+        }
+
+        setMessage(data.message);
+      } else {
+        // Move selected contacts
+        const updatePromises = selectedContacts.map(contactId =>
+          fetch(`/api/contacts/${contactId}`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`,
+            },
+            body: JSON.stringify({ campaignId: bulkActionCampaign }),
+          })
+        );
+
+        await Promise.all(updatePromises);
+        setMessage(`Successfully moved ${selectedContacts.length} contact(s) to campaign`);
+      }
+
+      setSelectedContacts([]);
+      setSelectAllFiltered(false);
+      setBulkActionCampaign('');
+      setShowBulkActions(false);
+      await fetchContacts();
+    } catch (error) {
+      console.error('Bulk move error:', error);
+      setMessage('Failed to move some contacts');
+    } finally {
+      setIsBulkProcessing(false);
+    }
   };
 
 
@@ -531,6 +699,86 @@ function ContactsPageContent() {
           </DialogContent>
         </Dialog>
 
+        {/* Bulk Actions Bar */}
+        {selectedContacts.length > 0 && (
+          <Card className="mb-4 bg-blue-50 border-blue-200">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-4">
+                  <span className="font-medium text-blue-900">
+                    {selectAllFiltered
+                      ? `All ${totalContacts} filtered contact(s) selected`
+                      : `${selectedContacts.length} contact(s) selected`
+                    }
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setSelectedContacts([]);
+                      setSelectAllFiltered(false);
+                    }}
+                  >
+                    Clear Selection
+                  </Button>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowBulkActions(!showBulkActions)}
+                    disabled={isBulkProcessing}
+                  >
+                    Move to Campaign
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleBulkDelete}
+                    disabled={isBulkProcessing}
+                    className="text-red-600 hover:text-red-800"
+                  >
+                    {isBulkProcessing ? 'Processing...' : 'Delete Selected'}
+                  </Button>
+                </div>
+              </div>
+              {showBulkActions && (
+                <div className="mt-4 flex items-center space-x-2">
+                  <select
+                    value={bulkActionCampaign}
+                    onChange={(e) => setBulkActionCampaign(e.target.value)}
+                    className="rounded-md border border-input bg-white px-3 py-2 text-sm"
+                  >
+                    <option value="">Select Campaign</option>
+                    {campaigns.map(campaign => (
+                      <option key={campaign._id} value={campaign._id}>
+                        {campaign.name}
+                      </option>
+                    ))}
+                  </select>
+                  <Button
+                    size="sm"
+                    onClick={handleBulkMoveCampaign}
+                    disabled={!bulkActionCampaign || isBulkProcessing}
+                  >
+                    Move
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setShowBulkActions(false);
+                      setBulkActionCampaign('');
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
         {/* Contacts Table */}
         <Card>
           <CardHeader>
@@ -554,6 +802,14 @@ function ContactsPageContent() {
                 <table className="w-full">
                   <thead>
                     <tr className="border-b">
+                      <th className="w-12 p-3">
+                        <input
+                          type="checkbox"
+                          checked={selectedContacts.length === contacts.length && contacts.length > 0}
+                          onChange={(e) => handleSelectAll(e.target.checked)}
+                          className="rounded"
+                        />
+                      </th>
                       <th className="text-left p-3 font-medium">Contact</th>
                       <th className="text-left p-3 font-medium">Company</th>
                       <th className="text-left p-3 font-medium">Campaign</th>
@@ -564,6 +820,14 @@ function ContactsPageContent() {
                   <tbody>
                     {contacts.map((contact) => (
                       <tr key={contact._id} className="border-b hover:bg-gray-50">
+                        <td className="p-3">
+                          <input
+                            type="checkbox"
+                            checked={selectedContacts.includes(contact._id)}
+                            onChange={(e) => handleSelectContact(contact._id, e.target.checked)}
+                            className="rounded"
+                          />
+                        </td>
                         <td className="p-3">
                           <div>
                             <div className="font-medium">

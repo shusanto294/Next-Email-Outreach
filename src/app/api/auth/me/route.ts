@@ -31,6 +31,7 @@ export async function GET(req: NextRequest) {
         openaiModel: user.openaiModel,
         deepseekApiKey: user.deepseekApiKey,
         deepseekModel: user.deepseekModel,
+        ignoreKeywords: user.ignoreKeywords,
       },
     });
   } catch (error) {

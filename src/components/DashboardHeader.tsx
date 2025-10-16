@@ -10,13 +10,13 @@ export default function DashboardHeader() {
     <nav className="bg-white shadow-sm border-b">
       <div className="max-w-7xl mx-auto px-6 py-4">
         <div className="flex justify-between items-center">
-          <button 
+          <button
             onClick={() => router.push('/dashboard')}
             className="text-2xl font-bold text-gray-900 hover:text-blue-600 transition-colors"
           >
             Outreach
           </button>
-          <div className="space-x-4">
+          <div className="flex items-center space-x-4">
             <Button variant="outline" onClick={() => router.push('/dashboard/email-accounts')}>
               Email Accounts
             </Button>

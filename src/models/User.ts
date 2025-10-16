@@ -15,6 +15,7 @@ export interface IUser extends Document {
   openaiModel?: string;
   deepseekApiKey?: string;
   deepseekModel?: string;
+  ignoreKeywords?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -86,6 +87,11 @@ const UserSchema = new Schema<IUser>(
       type: String,
       trim: true,
       default: 'deepseek-chat',
+    },
+    ignoreKeywords: {
+      type: String,
+      trim: true,
+      default: '',
     },
   },
   {

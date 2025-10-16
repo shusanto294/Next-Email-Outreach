@@ -175,9 +175,9 @@ export default function CampaignsPage() {
   };
 
 
-  const calculateOpenRate = (opened: number, sent: number) => {
+  const calculateReplyRate = (replied: number, sent: number) => {
     if (sent === 0) return 0;
-    return Math.round((opened / sent) * 100);
+    return Math.round((replied / sent) * 100);
   };
 
   if (isLoading) {
@@ -266,7 +266,7 @@ export default function CampaignsPage() {
                     </div>
                   </div>
 
-                  <div className="grid md:grid-cols-4 gap-4 mb-4">
+                  <div className="grid md:grid-cols-3 gap-4 mb-4">
                     <div className="bg-blue-50 p-3 rounded border border-blue-200">
                       <div className="text-sm text-blue-600">Total Contacts</div>
                       <div className="text-2xl font-bold text-blue-700">
@@ -284,12 +284,12 @@ export default function CampaignsPage() {
                       </div>
                     </div>
                     <div className="bg-purple-50 p-3 rounded border border-purple-200">
-                      <div className="text-sm text-purple-600">Open Rate</div>
+                      <div className="text-sm text-purple-600">Reply Rate</div>
                       <div className="text-2xl font-bold text-purple-700">
-                        {calculateOpenRate(campaign.stats?.opened || 0, campaign.stats?.sent || 0)}%
+                        {calculateReplyRate(campaign.stats?.replied || 0, campaign.stats?.sent || 0)}%
                       </div>
                       <div className="text-xs text-purple-500 mt-1">
-                        emails opened
+                        emails replied
                       </div>
                     </div>
                   </div>

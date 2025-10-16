@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Settings } from 'lucide-react';
 import DashboardHeader from '@/components/DashboardHeader';
 
 interface User {
@@ -18,26 +19,40 @@ interface User {
   timezone?: string;
   openaiApiKey?: string;
   openaiModel?: string;
+  ignoreKeywords?: string;
+}
+
+interface DashboardStats {
+  campaignsCount: number;
+  leadsCount: number;
+  sentCount: number;
+  repliedCount: number;
 }
 
 
 
 export default function DashboardPage() {
   const [user, setUser] = useState<User | null>(null);
+  const [stats, setStats] = useState<DashboardStats>({
+    campaignsCount: 0,
+    leadsCount: 0,
+    sentCount: 0,
+    repliedCount: 0,
+  });
   const [isLoading, setIsLoading] = useState(true);
   const [openaiApiKey, setOpenaiApiKey] = useState('');
   const [openaiModel, setOpenaiModel] = useState('gpt-3.5-turbo');
-  const [timezone, setTimezone] = useState('UTC');
+  const [ignoreKeywords, setIgnoreKeywords] = useState('');
   const [isSaving, setIsSaving] = useState(false);
-  const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [isSavingReplySettings, setIsSavingReplySettings] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
-  const [settingsMessage, setSettingsMessage] = useState('');
+  const [replySettingsMessage, setReplySettingsMessage] = useState('');
   const router = useRouter();
 
   useEffect(() => {
     const checkAuth = async () => {
       const token = localStorage.getItem('token');
-      
+
       if (!token) {
         router.push('/auth/login');
         return;
@@ -58,7 +73,10 @@ export default function DashboardPage() {
         setUser(data.user);
         setOpenaiApiKey(data.user.openaiApiKey || '');
         setOpenaiModel(data.user.openaiModel || 'gpt-3.5-turbo');
-        setTimezone(data.user.timezone || 'UTC');
+        setIgnoreKeywords(data.user.ignoreKeywords || '');
+
+        // Fetch dashboard stats
+        fetchDashboardStats(token);
       } catch {
         localStorage.removeItem('token');
         localStorage.removeItem('user');
@@ -71,13 +89,38 @@ export default function DashboardPage() {
     checkAuth();
   }, [router]);
 
+  const fetchDashboardStats = async (token: string) => {
+    try {
+      // Fetch campaigns count
+      const campaignsRes = await fetch('/api/campaigns', {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      const campaignsData = await campaignsRes.json();
+      const campaignsCount = campaignsData.campaigns?.length || 0;
 
+      // Fetch contacts with a large limit to get all contacts for aggregation
+      // We need to fetch all contacts to calculate sent and replied counts
+      const contactsRes = await fetch('/api/contacts?limit=10000', {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      const contactsData = await contactsRes.json();
+      const contacts = contactsData.contacts || [];
+      const leadsCount = contactsData.pagination?.total || 0; // Use total from pagination
+      const sentCount = contacts.reduce((sum: number, contact: any) => sum + (contact.sent || 0), 0);
+      const repliedCount = contacts.reduce((sum: number, contact: any) => sum + (contact.replied || 0), 0);
 
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    router.push('/');
+      setStats({
+        campaignsCount,
+        leadsCount,
+        sentCount,
+        repliedCount,
+      });
+    } catch (error) {
+      console.error('Error fetching dashboard stats:', error);
+    }
   };
+
+
 
   const handleSaveAiSettings = async () => {
     setIsSaving(true);
@@ -114,37 +157,36 @@ export default function DashboardPage() {
     }
   };
 
-
-  const handleSaveUserSettings = async () => {
-    setIsSavingSettings(true);
-    setSettingsMessage('');
+  const handleSaveReplySettings = async () => {
+    setIsSavingReplySettings(true);
+    setReplySettingsMessage('');
 
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch('/api/user/settings', {
+      const response = await fetch('/api/user/reply-settings', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`,
         },
         body: JSON.stringify({
-          timezone,
+          ignoreKeywords: ignoreKeywords.trim(),
         }),
       });
 
       if (!response.ok) {
-        throw new Error('Failed to save user settings');
+        throw new Error('Failed to save reply settings');
       }
 
       const data = await response.json();
       setUser(data.user);
-      setSettingsMessage('User settings saved successfully!');
-      setTimeout(() => setSettingsMessage(''), 3000);
+      setReplySettingsMessage('Reply settings saved successfully!');
+      setTimeout(() => setReplySettingsMessage(''), 3000);
     } catch {
-      setSettingsMessage('Failed to save user settings. Please try again.');
-      setTimeout(() => setSettingsMessage(''), 3000);
+      setReplySettingsMessage('Failed to save reply settings. Please try again.');
+      setTimeout(() => setReplySettingsMessage(''), 3000);
     } finally {
-      setIsSavingSettings(false);
+      setIsSavingReplySettings(false);
     }
   };
 
@@ -166,11 +208,21 @@ export default function DashboardPage() {
 
       {/* Dashboard Content */}
       <div className="max-w-7xl mx-auto px-6 py-8">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
-          <p className="text-gray-600 mt-2">
-            Manage your email campaigns and track performance
-          </p>
+        <div className="mb-8 flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
+            <p className="text-gray-600 mt-2">
+              Manage your email campaigns and track performance
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => router.push('/dashboard/settings')}
+            className="hover:bg-gray-100"
+          >
+            <Settings className="w-5 h-5" />
+          </Button>
         </div>
 
         {/* Stats Cards */}
@@ -178,15 +230,15 @@ export default function DashboardPage() {
           <Card>
             <CardHeader>
               <CardTitle className="text-sm font-medium text-gray-600">
-                Emails Sent
+                Campaigns Count
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-gray-900">
-                {user.emailsSent.toLocaleString()}
+                {stats.campaignsCount.toLocaleString()}
               </div>
               <p className="text-sm text-gray-500">
-                {user.emailsLimit - user.emailsSent} remaining this month
+                Total campaigns
               </p>
             </CardContent>
           </Card>
@@ -194,36 +246,42 @@ export default function DashboardPage() {
           <Card>
             <CardHeader>
               <CardTitle className="text-sm font-medium text-gray-600">
-                Active Campaigns
+                Leads Count
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-gray-900">0</div>
-              <p className="text-sm text-gray-500">No active campaigns</p>
+              <div className="text-2xl font-bold text-gray-900">
+                {stats.leadsCount.toLocaleString()}
+              </div>
+              <p className="text-sm text-gray-500">Total contacts</p>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader>
               <CardTitle className="text-sm font-medium text-gray-600">
-                Open Rate
+                Sent Count
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-gray-900">0%</div>
-              <p className="text-sm text-gray-500">No data available</p>
+              <div className="text-2xl font-bold text-gray-900">
+                {stats.sentCount.toLocaleString()}
+              </div>
+              <p className="text-sm text-gray-500">Total emails sent</p>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader>
               <CardTitle className="text-sm font-medium text-gray-600">
-                Reply Rate
+                Replied Count
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-gray-900">0%</div>
-              <p className="text-sm text-gray-500">No data available</p>
+              <div className="text-2xl font-bold text-gray-900">
+                {stats.repliedCount.toLocaleString()}
+              </div>
+              <p className="text-sm text-gray-500">Total replies received</p>
             </CardContent>
           </Card>
         </div>
@@ -240,57 +298,55 @@ export default function DashboardPage() {
             <CardContent className="space-y-6">
               {/* OpenAI Section */}
               <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      API Key
-                    </label>
-                    <Input
-                      type="password"
-                      value={openaiApiKey}
-                      onChange={(e) => setOpenaiApiKey(e.target.value)}
-                      placeholder="Enter OpenAI API key"
-                      className="w-full"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Model
-                    </label>
-                    <select
-                      value={openaiModel}
-                      onChange={(e) => setOpenaiModel(e.target.value)}
-                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                    >
-                      <optgroup label="💰 Cost-Effective (Recommended for Cold Email)">
-                        <option value="gpt-3.5-turbo">GPT-3.5 Turbo (Default)</option>
-                        <option value="gpt-3.5-turbo-16k">GPT-3.5 Turbo 16K</option>
-                        <option value="gpt-4o-mini">GPT-4o Mini</option>
-                      </optgroup>
-                      <optgroup label="🚀 Next Generation (GPT-5 Series)">
-                        <option value="gpt-5">GPT-5</option>
-                        <option value="gpt-5-turbo">GPT-5 Turbo</option>
-                        <option value="gpt-5-mini">GPT-5 Mini</option>
-                      </optgroup>
-                      <optgroup label="🧠 Advanced Reasoning">
-                        <option value="o1">o1</option>
-                        <option value="o1-mini">o1-mini</option>
-                        <option value="o1-preview">o1-preview</option>
-                      </optgroup>
-                      <optgroup label="⚡ High Performance">
-                        <option value="gpt-4o">GPT-4o</option>
-                        <option value="gpt-4-turbo">GPT-4 Turbo</option>
-                        <option value="gpt-4-turbo-preview">GPT-4 Turbo Preview</option>
-                        <option value="gpt-4">GPT-4</option>
-                      </optgroup>
-                      <optgroup label="📝 Text Optimization">
-                        <option value="text-davinci-003">Text Davinci 003</option>
-                        <option value="text-curie-001">Text Curie 001</option>
-                        <option value="text-babbage-001">Text Babbage 001</option>
-                        <option value="text-ada-001">Text Ada 001</option>
-                      </optgroup>
-                    </select>
-                  </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    API Key
+                  </label>
+                  <Input
+                    type="password"
+                    value={openaiApiKey}
+                    onChange={(e) => setOpenaiApiKey(e.target.value)}
+                    placeholder="Enter OpenAI API key"
+                    className="w-full"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Model
+                  </label>
+                  <select
+                    value={openaiModel}
+                    onChange={(e) => setOpenaiModel(e.target.value)}
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  >
+                    <optgroup label="💰 Cost-Effective (Recommended for Cold Email)">
+                      <option value="gpt-3.5-turbo">GPT-3.5 Turbo (Default)</option>
+                      <option value="gpt-3.5-turbo-16k">GPT-3.5 Turbo 16K</option>
+                      <option value="gpt-4o-mini">GPT-4o Mini</option>
+                    </optgroup>
+                    <optgroup label="🚀 Next Generation (GPT-5 Series)">
+                      <option value="gpt-5">GPT-5</option>
+                      <option value="gpt-5-turbo">GPT-5 Turbo</option>
+                      <option value="gpt-5-mini">GPT-5 Mini</option>
+                    </optgroup>
+                    <optgroup label="🧠 Advanced Reasoning">
+                      <option value="o1">o1</option>
+                      <option value="o1-mini">o1-mini</option>
+                      <option value="o1-preview">o1-preview</option>
+                    </optgroup>
+                    <optgroup label="⚡ High Performance">
+                      <option value="gpt-4o">GPT-4o</option>
+                      <option value="gpt-4-turbo">GPT-4 Turbo</option>
+                      <option value="gpt-4-turbo-preview">GPT-4 Turbo Preview</option>
+                      <option value="gpt-4">GPT-4</option>
+                    </optgroup>
+                    <optgroup label="📝 Text Optimization">
+                      <option value="text-davinci-003">Text Davinci 003</option>
+                      <option value="text-curie-001">Text Curie 001</option>
+                      <option value="text-babbage-001">Text Babbage 001</option>
+                      <option value="text-ada-001">Text Ada 001</option>
+                    </optgroup>
+                  </select>
                 </div>
               </div>
 
@@ -318,87 +374,47 @@ export default function DashboardPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Account Information</CardTitle>
+              <CardTitle>Reply Settings</CardTitle>
               <CardDescription>
-                Timezone and account specific settings
+                Configure keywords to ignore from received email replies
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-
-              {/* Timezone Settings Section */}
-              <div className="border-t pt-4 space-y-4">
+              <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Timezone
+                    Ignore Keywords
                   </label>
-                  <select
-                    value={timezone}
-                    onChange={(e) => setTimezone(e.target.value)}
-                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  >
-                    <option value="UTC">UTC</option>
-                    <option value="America/New_York">Eastern Time (EST/EDT)</option>
-                    <option value="America/Chicago">Central Time (CST/CDT)</option>
-                    <option value="America/Denver">Mountain Time (MST/MDT)</option>
-                    <option value="America/Los_Angeles">Pacific Time (PST/PDT)</option>
-                    <option value="America/Phoenix">Mountain Time (MST)</option>
-                    <option value="America/Anchorage">Alaska Time (AKST/AKDT)</option>
-                    <option value="Pacific/Honolulu">Hawaii Time (HST)</option>
-                    <option value="Europe/London">London (GMT/BST)</option>
-                    <option value="Europe/Paris">Central European Time (CET/CEST)</option>
-                    <option value="Europe/Berlin">Central European Time (CET/CEST)</option>
-                    <option value="Europe/Rome">Central European Time (CET/CEST)</option>
-                    <option value="Europe/Madrid">Central European Time (CET/CEST)</option>
-                    <option value="Europe/Amsterdam">Central European Time (CET/CEST)</option>
-                    <option value="Europe/Stockholm">Central European Time (CET/CEST)</option>
-                    <option value="Europe/Moscow">Moscow Time (MSK)</option>
-                    <option value="Asia/Dubai">Gulf Standard Time (GST)</option>
-                    <option value="Asia/Kolkata">India Standard Time (IST)</option>
-                    <option value="Asia/Dhaka">Bangladesh Standard Time (BST)</option>
-                    <option value="Asia/Bangkok">Indochina Time (ICT)</option>
-                    <option value="Asia/Singapore">Singapore Standard Time (SGT)</option>
-                    <option value="Asia/Shanghai">China Standard Time (CST)</option>
-                    <option value="Asia/Tokyo">Japan Standard Time (JST)</option>
-                    <option value="Asia/Seoul">Korea Standard Time (KST)</option>
-                    <option value="Australia/Sydney">Australian Eastern Time (AEST/AEDT)</option>
-                    <option value="Australia/Melbourne">Australian Eastern Time (AEST/AEDT)</option>
-                    <option value="Australia/Perth">Australian Western Time (AWST)</option>
-                    <option value="Pacific/Auckland">New Zealand Time (NZST/NZDT)</option>
-                  </select>
+                  <textarea
+                    value={ignoreKeywords}
+                    onChange={(e) => setIgnoreKeywords(e.target.value)}
+                    placeholder="Enter comma-separated keywords to ignore (e.g., unsubscribe, no thanks, not interested)"
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm min-h-[120px] resize-none"
+                    rows={5}
+                  />
                   <p className="text-xs text-gray-500 mt-1">
-                    Current time: {new Date().toLocaleString('en-US', { timeZone: timezone })}
+                    Replies containing these keywords will be ignored. Separate multiple keywords with commas.
                   </p>
                 </div>
 
-                <Button 
-                  onClick={handleSaveUserSettings}
-                  disabled={isSavingSettings}
-                  variant="outline"
+                <Button
+                  onClick={handleSaveReplySettings}
+                  disabled={isSavingReplySettings}
                   className="w-full"
                 >
-                  {isSavingSettings ? 'Saving...' : 'Save Settings'}
+                  {isSavingReplySettings ? 'Saving...' : 'Save Reply Settings'}
                 </Button>
 
-                {/* Settings Status Message */}
-                {settingsMessage && (
+                {/* Status Message */}
+                {replySettingsMessage && (
                   <div className={`text-sm p-2 rounded ${
-                    settingsMessage.includes('success') 
-                      ? 'bg-green-50 text-green-700 border border-green-200' 
+                    replySettingsMessage.includes('success')
+                      ? 'bg-green-50 text-green-700 border border-green-200'
                       : 'bg-red-50 text-red-700 border border-red-200'
                   }`}>
-                    {settingsMessage}
+                    {replySettingsMessage}
                   </div>
                 )}
-              </div>
-
-              <div className="pt-2 space-y-2">
-                <Button 
-                  variant="outline" 
-                  className="w-full text-red-600 hover:text-red-800 hover:border-red-300"
-                  onClick={handleLogout}
-                >
-                  Logout
-                </Button>
               </div>
             </CardContent>
           </Card>

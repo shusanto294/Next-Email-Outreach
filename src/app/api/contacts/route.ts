@@ -152,6 +152,10 @@ export async function POST(req: NextRequest) {
       notes: contactData.notes?.trim(),
     };
 
+    if (campaignId) {
+      contactPayload.campaignId = campaignId;
+    }
+
     const newContact = new Contact(contactPayload);
     await newContact.save();
 
