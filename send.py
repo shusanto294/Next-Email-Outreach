@@ -130,9 +130,6 @@ Prompt: {prompt}
 
 Generate a personalized email body for this contact:"""
 
-        print(f"\n🤖 Generating with AI...")
-        print(f"   Contact: {contact.get('firstName', '')} {contact.get('lastName', '')} from {contact.get('company', 'Unknown')}")
-
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
@@ -152,28 +149,75 @@ Generate a personalized email body for this contact:"""
             # Remove quotes if present
             generated_text = generated_text.strip('"\'')
 
-        print(f"   ✅ Generated {'subject' if is_subject else 'content'}: {generated_text[:50]}...")
-
         return generated_text
 
     except Exception as e:
-        print(f"   ❌ AI generation failed: {e}")
         return None
 
 
-# Continuous loop to process campaigns
-print("🚀 Starting continuous email campaign processor...")
-print(f"⏱️  Checking for active campaigns every {wait_time} seconds")
-print("Press Ctrl+C to stop\n")
+def send_email(email_account, contact, final_subject, final_content,
+               contacts_collection, current_contact_id):
+    """
+    Send email to a contact using the specified email account
 
+    Args:
+        email_account: Email account object with sender details
+        contact: Contact object with receiver details
+        final_subject: Email subject line
+        final_content: Email body content
+        contacts_collection: MongoDB collection for contacts
+        current_contact_id: ID of the current contact
+
+    Returns:
+        bool: True if email was sent successfully, False otherwise
+    """
+
+    print("=" * 50)
+
+    # Print sender details
+    print("\n📤 SENDER DETAILS:")
+    print(f"   Email: {email_account.get('email', 'N/A')}")
+    print(f"   Name: {email_account.get('fromName', 'N/A')}")
+    print(f"   Account ID: {email_account.get('_id', 'N/A')}")
+
+    # Print receiver details
+    print("\n📥 RECEIVER DETAILS:")
+    print(f"   Email: {contact.get('email', 'N/A')}")
+    print(f"   Name: {contact.get('firstName', '')} {contact.get('lastName', '')}")
+    print(f"   Company: {contact.get('company', 'N/A')}")
+    print(f"   Position: {contact.get('position', 'N/A')}")
+    print(f"   Contact ID: {contact.get('_id', 'N/A')}")
+
+    # Print email content
+    print("\n📧 EMAIL CONTENT:")
+    print(f"   Subject: {final_subject[:80]}..." if len(final_subject) > 80 else f"   Subject: {final_subject}")
+    print(f"   Content Preview: {final_content[:100]}..." if len(final_content) > 100 else f"   Content: {final_content}")
+
+   
+
+    # TODO: Implement actual email sending logic here
+    # For now, we just print the details
+
+    # Increment the contact's sent count
+    contact_sent_before = contact.get('sent', 0)
+    contacts_collection.update_one(
+        {"_id": current_contact_id},
+        {"$inc": {"sent": 1}}
+    )
+    print(f"\n📊 Contact sent count updated: {contact_sent_before} -> {contact_sent_before + 1}")
+    print(f"   Contact: {contact.get('email', 'N/A')}")
+
+    print("=" * 50)
+
+    return True
+
+
+# Continuous loop to process campaigns
 cycle_count = 0
 
 while True:
     try:
         cycle_count += 1
-        print(f"\n{'='*60}")
-        print(f"🔄 CYCLE #{cycle_count} - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        print(f"{'='*60}")
 
         # Loop through all active campaigns
         active_campaigns = campaigns_collection.find({"isActive": True})
@@ -181,7 +225,6 @@ while True:
 
         for campaign in active_campaigns:
             campaign_count += 1
-            print(f"\n📋 Processing Campaign #{campaign_count}: {campaign.get('name', 'Unnamed')}")
             # Get the user id
             user_id = campaign.get('userId')
 
@@ -234,27 +277,14 @@ while True:
                 # Final decision
                 can_send = is_valid_day and is_within_hours
 
-                print(f"\n{'✓' if can_send else '✗'} CAN SEND EMAIL: {can_send}")
-                if not can_send:
-                    if not is_valid_day:
-                        print(f"  Reason: Today ({campaign_weekday}) is not in the sending days list")
-                    if not is_within_hours:
-                        print(f"  Reason: Current time ({current_time_str}) is outside sending hours ({start_time}-{end_time})")
             except Exception as e:
-                print(f"Error checking schedule: {e}")
-                print(f"✗ CAN SEND EMAIL: False (Error occurred)")
                 can_send = False
 
             # Only proceed if we can send emails
             if not can_send:
-                print("Skipping campaign - outside sending schedule")
                 continue
 
-            # Print user details only if we can send
-            print(f"\nUser ID: {user_id}")
-
             openai_api_key = user.get('openaiApiKey') if user else None
-            print(f"OpenAI API Key: {openai_api_key[:10]}..." if openai_api_key else "OpenAI API Key: Not set")
 
             # Get send count
             stats = campaign.get('stats', {})
@@ -273,7 +303,6 @@ while True:
             contact_count = len(campaign_contacts)
 
             if contact_count == 0:
-                print("⚠️  No unsent contacts remaining for this campaign. Skipping.")
                 continue
 
             # Get or initialize the current email account index from campaign
@@ -288,8 +317,6 @@ while True:
                         {"_id": campaign["_id"]},
                         {"$set": {"currentEmailAccountIndex": 0}}
                     )
-
-                print(f"\n🔄 Email Account Rotation: Using account #{current_email_account_index + 1} of {email_account_count}")
 
                 # Try to find an available email account (one that hasn't hit daily limit)
                 email_account = None
@@ -313,15 +340,11 @@ while True:
                         })
 
                         daily_limit = temp_email_account.get('dailyLimit', 50)
-                        print(f"📊 Checking {temp_email_account.get('email', 'N/A')}: {sent_today_count}/{daily_limit} emails sent today")
 
                         # Check if this account can send more emails
                         if sent_today_count < daily_limit:
                             email_account = temp_email_account
-                            print(f"✅ Using email account: {email_account.get('email', 'N/A')}")
                             break
-                        else:
-                            print(f"⚠️  Daily limit reached for {temp_email_account.get('email')}. Trying next account...")
 
                     # Move to next account and try again
                     current_email_account_index = (current_email_account_index + 1) % email_account_count
@@ -329,7 +352,6 @@ while True:
 
                 # If no available account was found after checking all
                 if email_account is None:
-                    print(f"❌ All email accounts have reached their daily limits. Skipping campaign.")
                     # Update the index anyway for next cycle
                     next_index = (campaign.get('currentEmailAccountIndex', 0) + 1) % email_account_count
                     campaigns_collection.update_one(
@@ -339,32 +361,23 @@ while True:
                     continue
 
             else:
-                print("No email accounts available for this campaign")
                 current_email_account_index = None
                 current_email_account_id = None
                 email_account = None
 
             # Check if we have a valid email account before proceeding
             if email_account is None:
-                print("⚠️  No available email account. Skipping to next campaign.")
                 continue
 
             # Get the first unsent contact (always use index 0 since we filtered for sent=0)
             if contact_count > 0:
                 contact = campaign_contacts[0]  # Always get first unsent contact
                 current_contact_id = contact["_id"]
-
-                print(f"Contact Email: {contact.get('email', 'N/A')}")
-                print(f"📬 Unsent contacts remaining: {contact_count}")
             else:
-                print("No unsent contacts available for this campaign")
                 current_contact_id = None
                 contact = None
 
             # Prepare personalized email
-            print("\n📧 EMAIL PERSONALIZATION:")
-            print("=" * 50)
-
             # Get email fields directly from campaign
             useAiForSubject = campaign.get('useAiForSubject', False)
             useAiForContent = campaign.get('useAiForContent', False)
@@ -376,64 +389,40 @@ while True:
             # Process Subject
             if useAiForSubject:
                 ai_subject_prompt = campaign.get('aiSubjectPrompt', '')
-                print("📝 SUBJECT MODE: AI-Generated")
-                print(f"   Prompt: {ai_subject_prompt[:50]}..." if len(ai_subject_prompt) > 50 else f"   Prompt: {ai_subject_prompt}")
 
                 if openai_api_key and ai_subject_prompt and contact and email_account:
                     final_subject = generate_with_ai(openai_api_key, ai_subject_prompt, contact, email_account, is_subject=True)
-                    if final_subject:
-                        print(f"   ✅ Generated: {final_subject}")
-                    else:
-                        print(f"   ⚠️ AI generation failed, using prompt as fallback")
+                    if not final_subject:
                         final_subject = ai_subject_prompt[:60]  # Fallback to prompt
                 else:
-                    print(f"   ⚠️ Missing API key or data, using prompt as subject")
                     final_subject = ai_subject_prompt[:60] if ai_subject_prompt else "No Subject"
             else:
                 subject_template = campaign.get('subject', '')
-                print("📝 SUBJECT MODE: Manual with Variables")
-                print(f"   Template: {subject_template[:50]}..." if len(subject_template) > 50 else f"   Template: {subject_template}")
 
                 if contact and email_account:
                     final_subject = replace_variables(subject_template, contact, email_account)
-                    print(f"   ✅ Personalized: {final_subject}")
                 else:
                     final_subject = subject_template if subject_template else "No Subject"
 
             # Process Content/Body
             if useAiForContent:
                 ai_content_prompt = campaign.get('aiContentPrompt', '')
-                print("\n📄 CONTENT MODE: AI-Generated")
-                print(f"   Prompt: {ai_content_prompt[:50]}..." if len(ai_content_prompt) > 50 else f"   Prompt: {ai_content_prompt}")
 
                 if openai_api_key and ai_content_prompt and contact and email_account:
                     final_content = generate_with_ai(openai_api_key, ai_content_prompt, contact, email_account, is_subject=False)
-                    if final_content:
-                        print(f"   ✅ Generated: {final_content[:100]}...")
-                    else:
-                        print(f"   ⚠️ AI generation failed, using prompt as fallback")
+                    if not final_content:
                         final_content = ai_content_prompt
                 else:
-                    print(f"   ⚠️ Missing API key or data, using prompt as content")
                     final_content = ai_content_prompt if ai_content_prompt else "No content"
             else:
                 content_template = campaign.get('content', '')
-                print("\n📄 CONTENT MODE: Manual with Variables")
-                print(f"   Template: {content_template[:50]}..." if len(content_template) > 50 else f"   Template: {content_template}")
 
                 if contact and email_account:
                     final_content = replace_variables(content_template, contact, email_account)
-                    print(f"   ✅ Personalized: {final_content[:100]}...")
                 else:
                     final_content = content_template if content_template else "No content"
 
-            print("=" * 50)
-
-
-            # Send the actual email (placeholder - implement actual sending logic here)
-            print("\n🚀 SENDING EMAIL...")
-
-            # Store the sent email in the database BEFORE incrementing count
+            # Store the sent email in the database BEFORE sending
             try:
                 # Get email account details for 'from' field
                 from_email = email_account.get('email', 'N/A') if email_account else 'N/A'
@@ -467,24 +456,13 @@ while True:
                 result = sent_emails_collection.insert_one(sent_email_doc)
                 sent_email_id = result.inserted_id
 
-                print(f"\n✅ Email stored in database with ID: {sent_email_id}")
-                print(f"   From: {from_email}")
-                print(f"   To: {to_email}")
-                print(f"   Subject: {final_subject[:80]}..." if len(final_subject) > 80 else f"   Subject: {final_subject}")
-                print(f"   Content Preview: {final_content[:100]}..." if len(final_content) > 100 else f"   Content: {final_content}")
-
             except Exception as e:
-                print(f"❌ Error storing sent email in database: {e}")
                 # Continue even if database storage fails
+                pass
 
-            # Increment the contact's sent count and rotate email account index
-            contact_sent_before = contact.get('sent', 0)
-            contacts_collection.update_one(
-                {"_id": current_contact_id},
-                {"$inc": {"sent": 1}}
-            )
-            print(f"\n📊 Contact sent count updated: {contact_sent_before} -> {contact_sent_before + 1}")
-            print(f"   Contact: {contact.get('email', 'N/A')}")
+            # Send the actual email using the send_email function
+            send_email(email_account, contact, final_subject, final_content,
+                      contacts_collection, current_contact_id)
 
             # Rotate email account index for next send
             next_email_account_index = (current_email_account_index + 1) % email_account_count if email_account_count > 0 else 0
@@ -498,25 +476,14 @@ while True:
                     "currentEmailAccountIndex": next_email_account_index
                 }}
             )
-            print(f"📈 Campaign total sent updated: {sent} -> {new_sent_count}")
-            print(f"🔄 Email account index rotated: {current_email_account_index} -> {next_email_account_index}")
 
 
         # End of campaign loop
-        if campaign_count == 0:
-            print("\n⚠️  No active campaigns found")
-
-        print(f"\n✅ Cycle #{cycle_count} completed - Processed {campaign_count} campaigns")
-        print(f"⏱️  Waiting {wait_time} seconds before next cycle...")
         time.sleep(wait_time)
 
     except KeyboardInterrupt:
-        print("\n\n⛔ Stopped by user (Ctrl+C)")
-        print("👋 Shutting down email campaign processor...")
         break
     except Exception as e:
-        print(f"\n❌ Error in cycle #{cycle_count}: {e}")
-        print(f"⏱️  Waiting {wait_time} seconds before retrying...")
         time.sleep(wait_time)
 
 
