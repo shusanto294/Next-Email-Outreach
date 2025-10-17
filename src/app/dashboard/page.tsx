@@ -41,7 +41,6 @@ export default function DashboardPage() {
   });
   const [isLoading, setIsLoading] = useState(true);
   const [openaiApiKey, setOpenaiApiKey] = useState('');
-  const [openaiModel, setOpenaiModel] = useState('gpt-3.5-turbo');
   const [ignoreKeywords, setIgnoreKeywords] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [isSavingReplySettings, setIsSavingReplySettings] = useState(false);
@@ -72,7 +71,6 @@ export default function DashboardPage() {
         const data = await response.json();
         setUser(data.user);
         setOpenaiApiKey(data.user.openaiApiKey || '');
-        setOpenaiModel(data.user.openaiModel || 'gpt-3.5-turbo');
         setIgnoreKeywords(data.user.ignoreKeywords || '');
 
         // Fetch dashboard stats
@@ -137,7 +135,6 @@ export default function DashboardPage() {
         body: JSON.stringify({
           aiProvider: 'openai', // Always use OpenAI
           openaiApiKey: openaiApiKey.trim(),
-          openaiModel,
         }),
       });
 
@@ -310,44 +307,6 @@ export default function DashboardPage() {
                     className="w-full"
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Model
-                  </label>
-                  <select
-                    value={openaiModel}
-                    onChange={(e) => setOpenaiModel(e.target.value)}
-                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  >
-                    <optgroup label="💰 Cost-Effective (Recommended for Cold Email)">
-                      <option value="gpt-3.5-turbo">GPT-3.5 Turbo (Default)</option>
-                      <option value="gpt-3.5-turbo-16k">GPT-3.5 Turbo 16K</option>
-                      <option value="gpt-4o-mini">GPT-4o Mini</option>
-                    </optgroup>
-                    <optgroup label="🚀 Next Generation (GPT-5 Series)">
-                      <option value="gpt-5">GPT-5</option>
-                      <option value="gpt-5-turbo">GPT-5 Turbo</option>
-                      <option value="gpt-5-mini">GPT-5 Mini</option>
-                    </optgroup>
-                    <optgroup label="🧠 Advanced Reasoning">
-                      <option value="o1">o1</option>
-                      <option value="o1-mini">o1-mini</option>
-                      <option value="o1-preview">o1-preview</option>
-                    </optgroup>
-                    <optgroup label="⚡ High Performance">
-                      <option value="gpt-4o">GPT-4o</option>
-                      <option value="gpt-4-turbo">GPT-4 Turbo</option>
-                      <option value="gpt-4-turbo-preview">GPT-4 Turbo Preview</option>
-                      <option value="gpt-4">GPT-4</option>
-                    </optgroup>
-                    <optgroup label="📝 Text Optimization">
-                      <option value="text-davinci-003">Text Davinci 003</option>
-                      <option value="text-curie-001">Text Curie 001</option>
-                      <option value="text-babbage-001">Text Babbage 001</option>
-                      <option value="text-ada-001">Text Ada 001</option>
-                    </optgroup>
-                  </select>
-                </div>
               </div>
 
               {/* Save Button */}
@@ -383,18 +342,16 @@ export default function DashboardPage() {
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Ignore Keywords
+                    Ignore Keywords in reply
                   </label>
-                  <textarea
+                  <Input
+                    type="text"
                     value={ignoreKeywords}
                     onChange={(e) => setIgnoreKeywords(e.target.value)}
                     placeholder="Enter comma-separated keywords to ignore (e.g., unsubscribe, no thanks, not interested)"
-                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm min-h-[120px] resize-none"
-                    rows={5}
+                    className="w-full"
                   />
-                  <p className="text-xs text-gray-500 mt-1">
-                    Replies containing these keywords will be ignored. Separate multiple keywords with commas.
-                  </p>
+
                 </div>
 
                 <Button

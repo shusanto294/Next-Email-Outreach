@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from pymongo import MongoClient
 from bson import ObjectId
 import re
+import pytz
 
 # Load environment variables
 load_dotenv('.env.local')
@@ -24,10 +25,49 @@ received_emails_collection = db['receivedemails']
 sent_emails_collection = db['sentemails']
 contacts_collection = db['contacts']
 campaigns_collection = db['campaigns']
+users_collection = db['users']
 
 # Configuration
-CHECK_INTERVAL = 60  # Check every 60 seconds
+CHECK_INTERVAL = 1  # Check every 60 seconds
 EMAILS_TO_FETCH = 50  # Number of emails to fetch per account per check
+
+
+def should_ignore_email(subject, body, user_id):
+    """Check if email should be ignored based on user's ignore keywords"""
+    try:
+        # Fetch user's ignore keywords
+        user = users_collection.find_one({'_id': ObjectId(user_id)})
+
+        if not user or not user.get('ignoreKeywords'):
+            return False  # No keywords to ignore
+
+        # Get keywords and split by comma
+        ignore_keywords_str = user.get('ignoreKeywords', '').strip()
+        if not ignore_keywords_str:
+            return False
+
+        # Split by comma and clean each keyword
+        keywords = [kw.strip().lower() for kw in ignore_keywords_str.split(',') if kw.strip()]
+
+        if not keywords:
+            return False
+
+        # Combine subject and body for checking
+        subject_lower = (subject or '').lower()
+        body_lower = (body or '').lower()
+        combined_text = subject_lower + ' ' + body_lower
+
+        # Check if any keyword is present
+        for keyword in keywords:
+            if keyword in combined_text:
+                print(f"      🚫 Ignoring email - contains keyword: '{keyword}'")
+                return True
+
+        return False
+
+    except Exception as e:
+        print(f"      ⚠️ Error checking ignore keywords: {e}")
+        return False  # Don't ignore if there's an error
 
 
 def clean_email_address(email_str):
@@ -366,6 +406,12 @@ def fetch_emails_from_account(email_account):
                 # Extract content
                 text_content, html_content = extract_text_from_email(msg)
 
+                # Check if email should be ignored based on user's ignore keywords
+                if should_ignore_email(subject, text_content, user_id):
+                    print(f"   ⏭️  Skipping email - matches ignore keywords")
+                    print(f"      Subject: {subject[:50]}...")
+                    continue
+
                 # Extract attachments
                 attachments = extract_attachments_info(msg)
 
@@ -473,8 +519,6 @@ def main():
     iteration = 0
 
     while True:
-        iteration += 1
-        print(f"\n\n🔄 ITERATION #{iteration} - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         print("=" * 60)
 
         try:

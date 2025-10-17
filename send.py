@@ -8,11 +8,27 @@ from pymongo import MongoClient
 from bson import ObjectId
 import pytz
 from openai import OpenAI
+import requests
+from bs4 import BeautifulSoup
+from urllib.parse import urlparse
 
 # Force unbuffered output
 sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', buffering=1)
 
-wait_time = 1  # Wait 60 seconds between cycles
+# Configuration
+wait_time = 60  # Wait time between cycles (in seconds)
+
+# Token limits for website content
+# gpt-4o-mini has 128k context window
+# Using 6000 tokens for website content to maximize personalization
+WEBSITE_CONTENT_MAX_TOKENS = 6000  # ~24,000 characters
+# This provides comprehensive website context while staying well within limits:
+# - Website content: ~6,000 tokens
+# - Contact information: ~200 tokens
+# - Prompt: ~100-500 tokens
+# - System message: ~150 tokens
+# - Response: ~500-1000 tokens
+# Total: ~7,000-8,000 tokens (well within 128k limit)
 
 load_dotenv('.env.local')
 
@@ -27,6 +43,94 @@ campaigns_collection = db['campaigns']
 email_accounts_collection = db['emailaccounts']
 users_collection = db['users']
 sent_emails_collection = db['sentemails']
+
+
+def estimate_tokens(text):
+    """
+    Estimate the number of tokens in a text string.
+    Rule of thumb: ~4 characters = 1 token for English text
+
+    Args:
+        text: Text to estimate tokens for
+
+    Returns:
+        int: Estimated token count
+    """
+    if not text:
+        return 0
+    return len(text) // 4
+
+
+def fetch_website_content(url, max_tokens=6000):
+    """
+    Fetch and parse website content using BeautifulSoup
+
+    The function intelligently limits content to stay within token limits:
+    - gpt-4o-mini has 128k context window
+    - We fetch up to 6000 tokens (~24,000 chars) for maximum personalization
+    - This leaves plenty of room for prompts, contact info, and responses
+    - Prioritizes the most important content (top of page)
+
+    Args:
+        url: Website URL to fetch
+        max_tokens: Maximum tokens to return (default 6000, ~24,000 characters)
+
+    Returns:
+        str: Cleaned website text content or empty string if fetch fails
+    """
+    if not url:
+        return ""
+
+    try:
+        # Add https:// if no protocol specified
+        if not url.startswith(('http://', 'https://')):
+            url = 'https://' + url
+
+        # Set a timeout and user agent to avoid being blocked
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+
+        # Parse HTML with BeautifulSoup
+        soup = BeautifulSoup(response.content, 'html.parser')
+
+        # Remove script and style elements
+        for script in soup(['script', 'style', 'nav', 'footer', 'header']):
+            script.decompose()
+
+        # Get text content
+        text = soup.get_text(separator=' ', strip=True)
+
+        # Clean up whitespace
+        lines = (line.strip() for line in text.splitlines())
+        chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
+        text = ' '.join(chunk for chunk in chunks if chunk)
+
+        # Calculate max characters based on token limit
+        # Using conservative estimate: 4 characters per token
+        max_characters = max_tokens * 4
+
+        # Limit length to stay within token budget
+        original_length = len(text)
+        if len(text) > max_characters:
+            text = text[:max_characters] + "..."
+            estimated_tokens = estimate_tokens(text)
+            print(f"   ⚠️  Website content truncated: {original_length} chars -> {len(text)} chars (~{estimated_tokens} tokens)")
+        else:
+            estimated_tokens = estimate_tokens(text)
+            print(f"   ℹ️  Website content size: {len(text)} chars (~{estimated_tokens} tokens)")
+
+        return text
+
+    except requests.exceptions.RequestException as e:
+        print(f"   ❌ Warning: Could not fetch website content from {url}: {str(e)}")
+        return ""
+    except Exception as e:
+        print(f"   ❌ Warning: Error parsing website content from {url}: {str(e)}")
+        return ""
 
 
 def replace_variables(text, contact, email_account):
@@ -53,8 +157,17 @@ def replace_variables(text, contact, email_account):
     return result
 
 
-def generate_with_ai(openai_api_key, prompt, contact, email_account, is_subject=False):
-    """Generate personalized email content using OpenAI"""
+def generate_with_ai(openai_api_key, prompt, contact, email_account, website_content=None, is_subject=False):
+    """Generate personalized email content using OpenAI
+
+    Args:
+        openai_api_key: OpenAI API key
+        prompt: The prompt for generating content
+        contact: Contact information dictionary
+        email_account: Email account information dictionary
+        website_content: Pre-fetched website content (optional)
+        is_subject: Whether generating subject line (True) or body (False)
+    """
     try:
         client = OpenAI(api_key=openai_api_key)
 
@@ -87,7 +200,22 @@ def generate_with_ai(openai_api_key, prompt, contact, email_account, is_subject=
         if contact.get('industry'):
             contact_info.append(f"Industry: {contact['industry']}")
 
+        # Add website content if provided
+        if website_content:
+            contact_info.append(f"\nWebsite Content:\n{website_content}")
+
         contact_context = "\n".join(contact_info)
+
+        # Estimate total input tokens for monitoring
+        estimated_contact_tokens = estimate_tokens(contact_context)
+        estimated_prompt_tokens = estimate_tokens(prompt)
+        estimated_system_tokens = 150  # Rough estimate for system message
+        total_estimated_input_tokens = estimated_contact_tokens + estimated_prompt_tokens + estimated_system_tokens
+
+        print(f"   📊 Estimated input tokens: ~{total_estimated_input_tokens} tokens")
+        print(f"      • Contact context: ~{estimated_contact_tokens} tokens")
+        print(f"      • Prompt: ~{estimated_prompt_tokens} tokens")
+        print(f"      • System message: ~{estimated_system_tokens} tokens")
 
         # Get sender name
         from_name = email_account.get('fromName', email_account.get('email', 'Sales Team'))
@@ -99,6 +227,7 @@ Generate a compelling, personalized subject line based on the prompt and contact
 IMPORTANT RULES:
 - Keep it under 60 characters
 - Make it personal and relevant to the contact
+- Use insights from their website content if provided to make it highly relevant
 - Do NOT use brackets or special formatting
 - Do NOT include "Subject:" prefix
 - Return ONLY the subject line, nothing else"""
@@ -108,7 +237,7 @@ IMPORTANT RULES:
 
 Prompt: {prompt}
 
-Generate a personalized subject line for this contact:"""
+Generate a personalized subject line for this contact. If website content is provided, use specific details from their business to make the subject line more compelling and relevant:"""
         else:
             system_message = f"""You are an expert email marketer writing personalized cold emails.
 Generate a professional, personalized email body based on the prompt and contact information.
@@ -116,6 +245,7 @@ Generate a professional, personalized email body based on the prompt and contact
 IMPORTANT RULES:
 - Use the contact's first name if available
 - Reference their company, position, or other relevant details
+- If website content is provided, use specific insights about their business, products, services, or recent activities to demonstrate research and make the email highly relevant
 - Keep it concise and professional
 - Sign off with the sender's name: {from_name}
 - Do NOT include subject line
@@ -128,7 +258,7 @@ Sender Name: {from_name}
 
 Prompt: {prompt}
 
-Generate a personalized email body for this contact:"""
+Generate a personalized email body for this contact. If website content is provided, reference specific details from their website to show you've done your research and make the email more relevant and compelling:"""
 
         response = client.chat.completions.create(
             model="gpt-4o-mini",
@@ -190,8 +320,11 @@ def send_email(email_account, contact, final_subject, final_content,
 
     # Print email content
     print("\n📧 EMAIL CONTENT:")
-    print(f"   Subject: {final_subject[:80]}..." if len(final_subject) > 80 else f"   Subject: {final_subject}")
-    print(f"   Content Preview: {final_content[:100]}..." if len(final_content) > 100 else f"   Content: {final_content}")
+    print(f"   Subject: {final_subject}")
+    print("\n📝 FULL EMAIL BODY:")
+    print("-" * 80)
+    print(final_content)
+    print("-" * 80)
 
    
 
@@ -382,6 +515,22 @@ while True:
             useAiForSubject = campaign.get('useAiForSubject', False)
             useAiForContent = campaign.get('useAiForContent', False)
 
+            # Fetch website content ONCE if AI is being used (for either subject or content)
+            website_content = ""
+            if (useAiForSubject or useAiForContent) and contact and contact.get('website'):
+                print(f"\n🌐 Fetching website content from: {contact['website']}")
+                print("=" * 80)
+                website_content = fetch_website_content(contact['website'], max_tokens=WEBSITE_CONTENT_MAX_TOKENS)
+                if website_content:  # Non-empty string means success
+                    print(f"\n✅ Successfully fetched {len(website_content)} characters from website")
+                    print("\n📄 FULL WEBSITE CONTENT:")
+                    print("-" * 80)
+                    print(website_content)
+                    print("-" * 80)
+                else:  # Empty string means fetch failed
+                    print(f"\n❌ Could not fetch website content (will continue without it)")
+                print("=" * 80)
+
             # Initialize final subject and content
             final_subject = None
             final_content = None
@@ -391,7 +540,7 @@ while True:
                 ai_subject_prompt = campaign.get('aiSubjectPrompt', '')
 
                 if openai_api_key and ai_subject_prompt and contact and email_account:
-                    final_subject = generate_with_ai(openai_api_key, ai_subject_prompt, contact, email_account, is_subject=True)
+                    final_subject = generate_with_ai(openai_api_key, ai_subject_prompt, contact, email_account, website_content=website_content, is_subject=True)
                     if not final_subject:
                         final_subject = ai_subject_prompt[:60]  # Fallback to prompt
                 else:
@@ -409,7 +558,7 @@ while True:
                 ai_content_prompt = campaign.get('aiContentPrompt', '')
 
                 if openai_api_key and ai_content_prompt and contact and email_account:
-                    final_content = generate_with_ai(openai_api_key, ai_content_prompt, contact, email_account, is_subject=False)
+                    final_content = generate_with_ai(openai_api_key, ai_content_prompt, contact, email_account, website_content=website_content, is_subject=False)
                     if not final_content:
                         final_content = ai_content_prompt
                 else:
