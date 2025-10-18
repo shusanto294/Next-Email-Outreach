@@ -21,7 +21,7 @@ export async function PUT(req: NextRequest) {
         ignoreKeywords: ignoreKeywords || '',
       },
       { new: true }
-    ).select('-password');
+    ).select('-password').lean();
 
     if (!updatedUser) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
@@ -30,7 +30,7 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({
       message: 'Reply settings updated successfully',
       user: {
-        id: updatedUser._id.toString(),
+        id: updatedUser._id?.toString(),
         email: updatedUser.email,
         firstName: updatedUser.firstName,
         lastName: updatedUser.lastName,

@@ -24,6 +24,7 @@ export async function GET(request: NextRequest) {
     const level = searchParams.get('level'); // 'info', 'success', 'warning', 'error'
 
     // Build query
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const query: any = { userId: user._id };
     if (source) query.source = source;
     if (level) query.level = level;
@@ -48,10 +49,10 @@ export async function GET(request: NextRequest) {
         hasMore: skip + logs.length < total,
       },
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error('Error fetching logs:', error);
     return NextResponse.json(
-      { error: 'Failed to fetch logs', details: error.message },
+      { error: 'Failed to fetch logs', details: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
     );
   }
@@ -75,10 +76,10 @@ export async function DELETE(request: NextRequest) {
       message: `Deleted ${result.deletedCount} logs`,
       deletedCount: result.deletedCount,
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error('Error deleting logs:', error);
     return NextResponse.json(
-      { error: 'Failed to delete logs', details: error.message },
+      { error: 'Failed to delete logs', details: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
     );
   }

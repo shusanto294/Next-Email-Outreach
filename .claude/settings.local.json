@@ -31,7 +31,10 @@
       "Bash(xargs kill:*)",
       "Bash(curl:*)",
       "Bash(awk:*)",
-      "Bash(cat /Users/shusantokumarmodak/Desktop/Next-Email-Outreach/src/app/api/logs/route.ts)"
+      "Bash(cat /Users/shusantokumarmodak/Desktop/Next-Email-Outreach/src/app/api/logs/route.ts)",
+      "Bash(NODE_OPTIONS=\"--max-old-space-size=4096\" npm run build)",
+      "Bash(npx next info)",
+      "Bash(printenv)"
     ],
     "deny": []
   }

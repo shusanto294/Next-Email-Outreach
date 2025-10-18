@@ -55,7 +55,7 @@ export async function PUT(req: NextRequest) {
         email: email.toLowerCase().trim(),
       },
       { new: true }
-    ).select('-password');
+    ).select('-password').lean();
 
     if (!updatedUser) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
@@ -64,7 +64,7 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({
       message: 'Account information updated successfully',
       user: {
-        id: updatedUser._id.toString(),
+        id: updatedUser._id?.toString(),
         email: updatedUser.email,
         firstName: updatedUser.firstName,
         lastName: updatedUser.lastName,

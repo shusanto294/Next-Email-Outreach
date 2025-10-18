@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -30,7 +30,7 @@ interface Log {
   source: 'send' | 'receive';
   level: 'info' | 'success' | 'warning' | 'error';
   message: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
 }
@@ -66,6 +66,61 @@ export default function DashboardPage() {
   const [isClearingLogs, setIsClearingLogs] = useState(false);
   const router = useRouter();
 
+  const fetchLogs = async (token: string, page: number) => {
+    try {
+      setIsLoadingLogs(true);
+      const response = await fetch(`/api/logs?page=${page}&limit=20`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch logs');
+      }
+
+      const data = await response.json();
+      setLogs(data.logs || []);
+      setLogsPagination(data.pagination);
+    } catch (error) {
+      console.error('Error fetching logs:', error);
+    } finally {
+      setIsLoadingLogs(false);
+    }
+  };
+
+  const fetchDashboardStats = useCallback(async (token: string) => {
+    try {
+      // Fetch campaigns count
+      const campaignsRes = await fetch('/api/campaigns', {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      const campaignsData = await campaignsRes.json();
+      const campaignsCount = campaignsData.campaigns?.length || 0;
+
+      // Fetch contacts with a large limit to get all contacts for aggregation
+      // We need to fetch all contacts to calculate sent and replied counts
+      const contactsRes = await fetch('/api/contacts?limit=10000', {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      const contactsData = await contactsRes.json();
+      const contacts = contactsData.contacts || [];
+      const leadsCount = contactsData.pagination?.total || 0; // Use total from pagination
+      const sentCount = contacts.reduce((sum: number, contact: { sent?: number }) => sum + (contact.sent || 0), 0);
+      const repliedCount = contacts.reduce((sum: number, contact: { replied?: number }) => sum + (contact.replied || 0), 0);
+
+      setStats({
+        campaignsCount,
+        leadsCount,
+        sentCount,
+        repliedCount,
+      });
+
+      // Fetch logs
+      fetchLogs(token, 1);
+    } catch (error) {
+      console.error('Error fetching dashboard stats:', error);
+    }
+  }, []);
+
   useEffect(() => {
     const checkAuth = async () => {
       const token = localStorage.getItem('token');
@@ -90,7 +145,7 @@ export default function DashboardPage() {
         setUser(data.user);
 
         // Fetch dashboard stats
-        fetchDashboardStats(token);
+        await fetchDashboardStats(token);
       } catch {
         localStorage.removeItem('token');
         localStorage.removeItem('user');
@@ -101,62 +156,7 @@ export default function DashboardPage() {
     };
 
     checkAuth();
-  }, [router]);
-
-  const fetchDashboardStats = async (token: string) => {
-    try {
-      // Fetch campaigns count
-      const campaignsRes = await fetch('/api/campaigns', {
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
-      const campaignsData = await campaignsRes.json();
-      const campaignsCount = campaignsData.campaigns?.length || 0;
-
-      // Fetch contacts with a large limit to get all contacts for aggregation
-      // We need to fetch all contacts to calculate sent and replied counts
-      const contactsRes = await fetch('/api/contacts?limit=10000', {
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
-      const contactsData = await contactsRes.json();
-      const contacts = contactsData.contacts || [];
-      const leadsCount = contactsData.pagination?.total || 0; // Use total from pagination
-      const sentCount = contacts.reduce((sum: number, contact: any) => sum + (contact.sent || 0), 0);
-      const repliedCount = contacts.reduce((sum: number, contact: any) => sum + (contact.replied || 0), 0);
-
-      setStats({
-        campaignsCount,
-        leadsCount,
-        sentCount,
-        repliedCount,
-      });
-
-      // Fetch logs
-      fetchLogs(token, 1);
-    } catch (error) {
-      console.error('Error fetching dashboard stats:', error);
-    }
-  };
-
-  const fetchLogs = async (token: string, page: number) => {
-    try {
-      setIsLoadingLogs(true);
-      const response = await fetch(`/api/logs?page=${page}&limit=20`, {
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch logs');
-      }
-
-      const data = await response.json();
-      setLogs(data.logs || []);
-      setLogsPagination(data.pagination);
-    } catch (error) {
-      console.error('Error fetching logs:', error);
-    } finally {
-      setIsLoadingLogs(false);
-    }
-  };
+  }, [router, fetchDashboardStats]);
 
   const handleClearLogs = async () => {
     if (!confirm('Are you sure you want to clear all logs? This action cannot be undone.')) {

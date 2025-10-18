@@ -11,7 +11,7 @@ export interface ILog extends Document {
     contact?: string;
     emailsSent?: number;
     emailsFetched?: number;
-    [key: string]: any;
+    [key: string]: unknown;
   };
   createdAt: Date;
   updatedAt: Date;

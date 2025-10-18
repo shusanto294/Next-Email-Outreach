@@ -84,6 +84,7 @@ export async function POST(req: NextRequest) {
 
       // Remove from old campaigns
       for (const oldCampId of oldCampaignIds) {
+        if (!oldCampId) continue;
         const contactIdsInThisCampaign = contactsToMove
           .filter(c => c.campaignId?.toString() === oldCampId.toString())
           .map(c => c._id);
