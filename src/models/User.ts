@@ -16,6 +16,8 @@ export interface IUser extends Document {
   deepseekApiKey?: string;
   deepseekModel?: string;
   ignoreKeywords?: string;
+  emailCheckDelay?: number;
+  emailSendDelay?: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -92,6 +94,14 @@ const UserSchema = new Schema<IUser>(
       type: String,
       trim: true,
       default: '',
+    },
+    emailCheckDelay: {
+      type: Number,
+      default: 30, // Default 30 seconds delay between email checks
+    },
+    emailSendDelay: {
+      type: Number,
+      default: 30, // Default 30 seconds delay between email sends
     },
   },
   {

@@ -16,6 +16,10 @@ interface User {
   emailsSent: number;
   emailsLimit: number;
   timezone?: string;
+  openaiApiKey?: string;
+  ignoreKeywords?: string;
+  emailCheckDelay?: number;
+  emailSendDelay?: number;
 }
 
 export default function SettingsPage() {
@@ -28,6 +32,10 @@ export default function SettingsPage() {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [openaiApiKey, setOpenaiApiKey] = useState('');
+  const [ignoreKeywords, setIgnoreKeywords] = useState('');
+  const [emailCheckDelay, setEmailCheckDelay] = useState(30);
+  const [emailSendDelay, setEmailSendDelay] = useState(30);
   const [isSavingAccount, setIsSavingAccount] = useState(false);
   const [isSavingPassword, setIsSavingPassword] = useState(false);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
@@ -62,6 +70,10 @@ export default function SettingsPage() {
         setLastName(data.user.lastName || '');
         setEmail(data.user.email || '');
         setTimezone(data.user.timezone || 'UTC');
+        setOpenaiApiKey(data.user.openaiApiKey || '');
+        setIgnoreKeywords(data.user.ignoreKeywords || '');
+        setEmailCheckDelay(data.user.emailCheckDelay || 30);
+        setEmailSendDelay(data.user.emailSendDelay || 30);
       } catch {
         localStorage.removeItem('token');
         localStorage.removeItem('user');
@@ -205,6 +217,10 @@ export default function SettingsPage() {
         },
         body: JSON.stringify({
           timezone,
+          openaiApiKey,
+          ignoreKeywords,
+          emailCheckDelay,
+          emailSendDelay,
         }),
       });
 
@@ -296,22 +312,6 @@ export default function SettingsPage() {
                 className="w-full"
               />
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Plan
-                </label>
-                <div className="text-base text-gray-900 capitalize">{user.plan}</div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Email Usage
-                </label>
-                <div className="text-base text-gray-900">
-                  {user.emailsSent.toLocaleString()} / {user.emailsLimit.toLocaleString()}
-                </div>
-              </div>
-            </div>
 
             <Button
               onClick={handleSaveAccountInfo}
@@ -401,15 +401,47 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
 
-        {/* Timezone Settings */}
+        {/* AI, Worker, and User Settings */}
         <Card className="mb-6">
           <CardHeader>
-            <CardTitle>Timezone Settings</CardTitle>
+            <CardTitle>AI, Worker, and User Settings</CardTitle>
             <CardDescription>
-              Configure your timezone for scheduling emails
+              Configure your AI settings, worker delays, and preferences
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                OpenAI API Key
+              </label>
+              <Input
+                type="password"
+                value={openaiApiKey}
+                onChange={(e) => setOpenaiApiKey(e.target.value)}
+                placeholder="sk-..."
+                className="w-full"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Your OpenAI API key for AI-powered features
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Ignore Keywords
+              </label>
+              <Input
+                type="text"
+                value={ignoreKeywords}
+                onChange={(e) => setIgnoreKeywords(e.target.value)}
+                placeholder="unsubscribe, optout, spam"
+                className="w-full"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Comma-separated keywords to ignore in email processing
+              </p>
+            </div>
+
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Timezone
@@ -450,6 +482,40 @@ export default function SettingsPage() {
               </select>
               <p className="text-xs text-gray-500 mt-1">
                 Current time: {new Date().toLocaleString('en-US', { timeZone: timezone })}
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Email Check Delay (seconds)
+              </label>
+              <Input
+                type="number"
+                value={emailCheckDelay}
+                onChange={(e) => setEmailCheckDelay(Number(e.target.value))}
+                placeholder="30"
+                min="1"
+                className="w-full"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Delay in seconds between each email check in receive.py worker
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Email Send Delay (seconds)
+              </label>
+              <Input
+                type="number"
+                value={emailSendDelay}
+                onChange={(e) => setEmailSendDelay(Number(e.target.value))}
+                placeholder="30"
+                min="1"
+                className="w-full"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Delay in seconds between each email send in send.py worker
               </p>
             </div>
 

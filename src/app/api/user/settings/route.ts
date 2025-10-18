@@ -10,15 +10,39 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { timezone } = await req.json();
+    const { timezone, openaiApiKey, ignoreKeywords, emailCheckDelay, emailSendDelay } = await req.json();
 
     console.log('🔄 User Settings Update Request:');
     console.log('- User ID:', user._id);
     console.log('- Timezone:', timezone);
+    console.log('- OpenAI API Key:', openaiApiKey ? '***' : 'Not provided');
+    console.log('- Ignore Keywords:', ignoreKeywords);
+    console.log('- Email Check Delay:', emailCheckDelay);
+    console.log('- Email Send Delay:', emailSendDelay);
 
     // Validate timezone if provided
     if (timezone && typeof timezone !== 'string') {
       return NextResponse.json({ error: 'Invalid timezone format' }, { status: 400 });
+    }
+
+    // Validate openaiApiKey if provided
+    if (openaiApiKey !== undefined && typeof openaiApiKey !== 'string') {
+      return NextResponse.json({ error: 'Invalid OpenAI API key format' }, { status: 400 });
+    }
+
+    // Validate ignoreKeywords if provided
+    if (ignoreKeywords !== undefined && typeof ignoreKeywords !== 'string') {
+      return NextResponse.json({ error: 'Invalid ignore keywords format' }, { status: 400 });
+    }
+
+    // Validate emailCheckDelay if provided
+    if (emailCheckDelay !== undefined && (typeof emailCheckDelay !== 'number' || emailCheckDelay < 1)) {
+      return NextResponse.json({ error: 'Invalid email check delay. Must be a positive number.' }, { status: 400 });
+    }
+
+    // Validate emailSendDelay if provided
+    if (emailSendDelay !== undefined && (typeof emailSendDelay !== 'number' || emailSendDelay < 1)) {
+      return NextResponse.json({ error: 'Invalid email send delay. Must be a positive number.' }, { status: 400 });
     }
 
     // Validate timezone exists
@@ -36,13 +60,32 @@ export async function PUT(req: NextRequest) {
     // Prepare update object
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const updateData: any = {};
-    
+
     if (timezone !== undefined) {
       updateData.timezone = timezone.trim();
     }
 
+    if (openaiApiKey !== undefined) {
+      updateData.openaiApiKey = openaiApiKey.trim();
+    }
+
+    if (ignoreKeywords !== undefined) {
+      updateData.ignoreKeywords = ignoreKeywords.trim();
+    }
+
+    if (emailCheckDelay !== undefined) {
+      updateData.emailCheckDelay = emailCheckDelay;
+    }
+
+    if (emailSendDelay !== undefined) {
+      updateData.emailSendDelay = emailSendDelay;
+    }
+
     console.log('💾 Update data to be saved:');
-    console.log(JSON.stringify(updateData, null, 2));
+    console.log(JSON.stringify({
+      ...updateData,
+      openaiApiKey: updateData.openaiApiKey ? '***' : undefined
+    }, null, 2));
 
     // Update user settings
     const updatedUser = await User.findByIdAndUpdate(
@@ -58,6 +101,10 @@ export async function PUT(req: NextRequest) {
 
     console.log('✅ User settings updated successfully:');
     console.log('- Timezone:', updatedUser.timezone);
+    console.log('- OpenAI API Key:', updatedUser.openaiApiKey ? '***' : 'Not set');
+    console.log('- Ignore Keywords:', updatedUser.ignoreKeywords);
+    console.log('- Email Check Delay:', updatedUser.emailCheckDelay);
+    console.log('- Email Send Delay:', updatedUser.emailSendDelay);
 
     return NextResponse.json({
       message: 'User settings updated successfully',

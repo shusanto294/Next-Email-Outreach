@@ -16,7 +16,7 @@ from urllib.parse import urlparse
 sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', buffering=1)
 
 # Configuration
-wait_time = 60  # Wait time between cycles (in seconds)
+DEFAULT_SEND_DELAY = 30  # Default wait time between cycles if user setting is not available (in seconds)
 
 # Token limits for website content
 # gpt-4o-mini has 128k context window
@@ -43,6 +43,43 @@ campaigns_collection = db['campaigns']
 email_accounts_collection = db['emailaccounts']
 users_collection = db['users']
 sent_emails_collection = db['sentemails']
+logs_collection = db['logs']
+
+
+def log_message(user_id, message, level='info', metadata=None):
+    """
+    Log a message to the database
+
+    Args:
+        user_id: User ID (ObjectId or string)
+        message: Log message
+        level: Log level ('info', 'success', 'warning', 'error')
+        metadata: Optional dictionary with additional data
+    """
+    try:
+        # Convert user_id to ObjectId if it's a string
+        if isinstance(user_id, str):
+            user_id = ObjectId(user_id)
+
+        current_utc_time = datetime.now(pytz.UTC)
+
+        log_doc = {
+            'userId': user_id,
+            'source': 'send',
+            'level': level,
+            'message': message,
+            'metadata': metadata or {},
+            'createdAt': current_utc_time,
+            'updatedAt': current_utc_time,
+        }
+
+        logs_collection.insert_one(log_doc)
+        # Also print to console for debugging
+        print(message)
+    except Exception as e:
+        # Fallback to print if logging fails
+        print(f"[LOG ERROR] {message}")
+        print(f"[LOG ERROR] Failed to write to database: {e}")
 
 
 def estimate_tokens(text):
@@ -118,6 +155,7 @@ def fetch_website_content(url, max_tokens=6000):
         if len(text) > max_characters:
             text = text[:max_characters] + "..."
             estimated_tokens = estimate_tokens(text)
+            # Note: No logging here as we don't have user_id in this context
             print(f"   ⚠️  Website content truncated: {original_length} chars -> {len(text)} chars (~{estimated_tokens} tokens)")
         else:
             estimated_tokens = estimate_tokens(text)
@@ -286,7 +324,7 @@ Generate a personalized email body for this contact. If website content is provi
 
 
 def send_email(email_account, contact, final_subject, final_content,
-               contacts_collection, current_contact_id):
+               contacts_collection, current_contact_id, user_id):
     """
     Send email to a contact using the specified email account
 
@@ -297,6 +335,7 @@ def send_email(email_account, contact, final_subject, final_content,
         final_content: Email body content
         contacts_collection: MongoDB collection for contacts
         current_contact_id: ID of the current contact
+        user_id: User ID for logging
 
     Returns:
         bool: True if email was sent successfully, False otherwise
@@ -304,21 +343,15 @@ def send_email(email_account, contact, final_subject, final_content,
 
     print("=" * 50)
 
-    # Print sender details
-    print("\n📤 SENDER DETAILS:")
-    print(f"   Email: {email_account.get('email', 'N/A')}")
-    print(f"   Name: {email_account.get('fromName', 'N/A')}")
-    print(f"   Account ID: {email_account.get('_id', 'N/A')}")
+    # Log sender details
+    sender_info = f"📤 Sending from: {email_account.get('email', 'N/A')} ({email_account.get('fromName', 'N/A')})"
+    print(f"\n{sender_info}")
 
-    # Print receiver details
-    print("\n📥 RECEIVER DETAILS:")
-    print(f"   Email: {contact.get('email', 'N/A')}")
-    print(f"   Name: {contact.get('firstName', '')} {contact.get('lastName', '')}")
-    print(f"   Company: {contact.get('company', 'N/A')}")
-    print(f"   Position: {contact.get('position', 'N/A')}")
-    print(f"   Contact ID: {contact.get('_id', 'N/A')}")
+    # Log receiver details
+    receiver_info = f"📥 Sending to: {contact.get('email', 'N/A')} - {contact.get('firstName', '')} {contact.get('lastName', '')} at {contact.get('company', 'N/A')}"
+    print(f"\n{receiver_info}")
 
-    # Print email content
+    # Print email content (not logged to DB to avoid clutter)
     print("\n📧 EMAIL CONTENT:")
     print(f"   Subject: {final_subject}")
     print("\n📝 FULL EMAIL BODY:")
@@ -326,7 +359,17 @@ def send_email(email_account, contact, final_subject, final_content,
     print(final_content)
     print("-" * 80)
 
-   
+    # Log the email sending event
+    log_message(
+        user_id,
+        f"Email sent to {contact.get('email', 'N/A')} - Subject: {final_subject[:50]}...",
+        level='success',
+        metadata={
+            'emailAccount': email_account.get('email', 'N/A'),
+            'contact': contact.get('email', 'N/A'),
+            'company': contact.get('company', 'N/A'),
+        }
+    )
 
     # TODO: Implement actual email sending logic here
     # For now, we just print the details
@@ -337,8 +380,9 @@ def send_email(email_account, contact, final_subject, final_content,
         {"_id": current_contact_id},
         {"$inc": {"sent": 1}}
     )
-    print(f"\n📊 Contact sent count updated: {contact_sent_before} -> {contact_sent_before + 1}")
-    print(f"   Contact: {contact.get('email', 'N/A')}")
+
+    update_msg = f"📊 Contact sent count updated: {contact_sent_before} -> {contact_sent_before + 1} for {contact.get('email', 'N/A')}"
+    print(f"\n{update_msg}")
 
     print("=" * 50)
 
@@ -360,6 +404,10 @@ while True:
             campaign_count += 1
             # Get the user id
             user_id = campaign.get('userId')
+
+            # Log campaign processing start
+            campaign_name = campaign.get('name', 'Unnamed Campaign')
+            log_message(user_id, f"🔄 Processing campaign: {campaign_name}", level='info')
 
             # Query the user from the users table
             user = users_collection.find_one({"_id": ObjectId(user_id)})
@@ -464,8 +512,14 @@ while True:
                     temp_email_account = email_accounts_collection.find_one({"_id": ObjectId(current_email_account_id)})
 
                     if temp_email_account:
-                        # Calculate sent count for today from database
-                        today_start = datetime.now(pytz.UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+                        # Calculate sent count for today from database using USER'S TIMEZONE
+                        # Get user's timezone (already fetched earlier in the loop)
+                        user_tz = pytz.timezone(timezone)
+                        # Get start of today in user's timezone
+                        today_start_user_tz = datetime.now(user_tz).replace(hour=0, minute=0, second=0, microsecond=0)
+                        # Convert to UTC for database query (sentAt is stored in UTC)
+                        today_start = today_start_user_tz.astimezone(pytz.UTC)
+
                         sent_today_count = sent_emails_collection.count_documents({
                             "emailAccountId": ObjectId(current_email_account_id),
                             "sentAt": {"$gte": today_start},
@@ -474,10 +528,43 @@ while True:
 
                         daily_limit = temp_email_account.get('dailyLimit', 50)
 
+                        # Log the check
+                        log_message(
+                            user_id,
+                            f"📊 Checking email account: {temp_email_account.get('email')} - Sent today: {sent_today_count}/{daily_limit}",
+                            level='info',
+                            metadata={
+                                'emailAccount': temp_email_account.get('email'),
+                                'sentToday': sent_today_count,
+                                'dailyLimit': daily_limit,
+                            }
+                        )
+
                         # Check if this account can send more emails
                         if sent_today_count < daily_limit:
                             email_account = temp_email_account
+                            log_message(
+                                user_id,
+                                f"✅ Selected email account: {temp_email_account.get('email')} ({sent_today_count}/{daily_limit})",
+                                level='success',
+                                metadata={
+                                    'emailAccount': temp_email_account.get('email'),
+                                    'sentToday': sent_today_count,
+                                    'dailyLimit': daily_limit,
+                                }
+                            )
                             break
+                        else:
+                            log_message(
+                                user_id,
+                                f"⚠️ Email account {temp_email_account.get('email')} has reached daily limit ({sent_today_count}/{daily_limit})",
+                                level='warning',
+                                metadata={
+                                    'emailAccount': temp_email_account.get('email'),
+                                    'sentToday': sent_today_count,
+                                    'dailyLimit': daily_limit,
+                                }
+                            )
 
                     # Move to next account and try again
                     current_email_account_index = (current_email_account_index + 1) % email_account_count
@@ -571,6 +658,59 @@ while True:
                 else:
                     final_content = content_template if content_template else "No content"
 
+            # CRITICAL CHECK: Verify daily limit BEFORE inserting to database
+            # This prevents exceeding the limit and must happen before any database writes
+            # This is a FINAL check right before insertion to prevent race conditions
+            try:
+                # Calculate sent count for today using USER'S TIMEZONE
+                user_tz = pytz.timezone(timezone)
+                # Get start of today in user's timezone
+                today_start_user_tz = datetime.now(user_tz).replace(hour=0, minute=0, second=0, microsecond=0)
+                # Convert to UTC for database query (sentAt is stored in UTC)
+                today_start = today_start_user_tz.astimezone(pytz.UTC)
+
+                sent_today_count = sent_emails_collection.count_documents({
+                    "emailAccountId": ObjectId(current_email_account_id),
+                    "sentAt": {"$gte": today_start},
+                    "status": {"$in": ["sent", "delivered"]}
+                })
+
+                daily_limit = email_account.get('dailyLimit', 50)
+
+                log_message(
+                    user_id,
+                    f"🔍 FINAL CHECK before sending: {email_account.get('email')} - {sent_today_count}/{daily_limit}",
+                    level='info',
+                    metadata={
+                        'emailAccount': email_account.get('email'),
+                        'sentToday': sent_today_count,
+                        'dailyLimit': daily_limit,
+                    }
+                )
+
+                if sent_today_count >= daily_limit:
+                    log_message(
+                        user_id,
+                        f"🛑 BLOCKED: Daily limit reached ({sent_today_count}/{daily_limit}) for {email_account.get('email')} - skipping send",
+                        level='warning',
+                        metadata={
+                            'emailAccount': email_account.get('email'),
+                            'sentToday': sent_today_count,
+                            'dailyLimit': daily_limit,
+                        }
+                    )
+                    # Skip this campaign WITHOUT inserting to database or sending
+                    continue
+
+            except Exception as e:
+                log_message(
+                    user_id,
+                    f"❌ Error checking daily limit: {e} - SKIPPING SEND for safety",
+                    level='error'
+                )
+                # Skip send if we can't verify the limit (fail-safe behavior)
+                continue
+
             # Store the sent email in the database BEFORE sending
             try:
                 # Get email account details for 'from' field
@@ -606,12 +746,17 @@ while True:
                 sent_email_id = result.inserted_id
 
             except Exception as e:
+                log_message(
+                    user_id,
+                    f"⚠️ Error storing email to database: {e}",
+                    level='warning'
+                )
                 # Continue even if database storage fails
                 pass
 
             # Send the actual email using the send_email function
             send_email(email_account, contact, final_subject, final_content,
-                      contacts_collection, current_contact_id)
+                      contacts_collection, current_contact_id, user_id)
 
             # Rotate email account index for next send
             next_email_account_index = (current_email_account_index + 1) % email_account_count if email_account_count > 0 else 0
@@ -628,14 +773,46 @@ while True:
 
 
         # End of campaign loop
-        print("Waiting " + str(wait_time) + " seconds" )
-        time.sleep(wait_time)
-        
+        # Get send delay from user settings
+        send_delay = DEFAULT_SEND_DELAY
+        try:
+            # Try to get user settings from the first active campaign
+            if campaign_count > 0:
+                # Reset cursor to get first campaign again
+                active_campaigns_for_delay = campaigns_collection.find({"isActive": True}, limit=1)
+                first_campaign = next(active_campaigns_for_delay, None)
+                if first_campaign:
+                    user_id = first_campaign.get('userId')
+                    if user_id:
+                        user = users_collection.find_one({'_id': ObjectId(user_id)})
+                        if user and user.get('emailSendDelay'):
+                            send_delay = user.get('emailSendDelay')
+                            print(f"📊 Using user's email send delay: {send_delay} seconds")
+        except Exception as e:
+            print(f"⚠️  Could not fetch user send delay, using default: {e}")
+
+        print("Waiting " + str(send_delay) + " seconds" )
+        time.sleep(send_delay)
+
 
     except KeyboardInterrupt:
         break
     except Exception as e:
-        time.sleep(wait_time)
-        print("Waiting " + str(wait_time) + " seconds" )
+        # Get send delay from user settings for error case
+        send_delay = DEFAULT_SEND_DELAY
+        try:
+            active_campaigns_for_delay = campaigns_collection.find({"isActive": True}, limit=1)
+            first_campaign = next(active_campaigns_for_delay, None)
+            if first_campaign:
+                user_id = first_campaign.get('userId')
+                if user_id:
+                    user = users_collection.find_one({'_id': ObjectId(user_id)})
+                    if user and user.get('emailSendDelay'):
+                        send_delay = user.get('emailSendDelay')
+        except:
+            pass
+
+        time.sleep(send_delay)
+        print("Waiting " + str(send_delay) + " seconds" )
 
 

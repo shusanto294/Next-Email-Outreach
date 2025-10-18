@@ -2,10 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Settings } from 'lucide-react';
+import { Settings, Trash2, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
 import DashboardHeader from '@/components/DashboardHeader';
 
 interface User {
@@ -16,10 +15,6 @@ interface User {
   plan: string;
   emailsSent: number;
   emailsLimit: number;
-  timezone?: string;
-  openaiApiKey?: string;
-  openaiModel?: string;
-  ignoreKeywords?: string;
 }
 
 interface DashboardStats {
@@ -27,6 +22,25 @@ interface DashboardStats {
   leadsCount: number;
   sentCount: number;
   repliedCount: number;
+}
+
+interface Log {
+  _id: string;
+  userId: string;
+  source: 'send' | 'receive';
+  level: 'info' | 'success' | 'warning' | 'error';
+  message: string;
+  metadata?: Record<string, any>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface LogsPagination {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+  hasMore: boolean;
 }
 
 
@@ -40,12 +54,16 @@ export default function DashboardPage() {
     repliedCount: 0,
   });
   const [isLoading, setIsLoading] = useState(true);
-  const [openaiApiKey, setOpenaiApiKey] = useState('');
-  const [ignoreKeywords, setIgnoreKeywords] = useState('');
-  const [isSaving, setIsSaving] = useState(false);
-  const [isSavingReplySettings, setIsSavingReplySettings] = useState(false);
-  const [saveMessage, setSaveMessage] = useState('');
-  const [replySettingsMessage, setReplySettingsMessage] = useState('');
+  const [logs, setLogs] = useState<Log[]>([]);
+  const [logsPagination, setLogsPagination] = useState<LogsPagination>({
+    page: 1,
+    limit: 20,
+    total: 0,
+    totalPages: 0,
+    hasMore: false,
+  });
+  const [isLoadingLogs, setIsLoadingLogs] = useState(false);
+  const [isClearingLogs, setIsClearingLogs] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -70,8 +88,6 @@ export default function DashboardPage() {
 
         const data = await response.json();
         setUser(data.user);
-        setOpenaiApiKey(data.user.openaiApiKey || '');
-        setIgnoreKeywords(data.user.ignoreKeywords || '');
 
         // Fetch dashboard stats
         fetchDashboardStats(token);
@@ -113,78 +129,90 @@ export default function DashboardPage() {
         sentCount,
         repliedCount,
       });
+
+      // Fetch logs
+      fetchLogs(token, 1);
     } catch (error) {
       console.error('Error fetching dashboard stats:', error);
     }
   };
 
-
-
-  const handleSaveAiSettings = async () => {
-    setIsSaving(true);
-    setSaveMessage('');
-
+  const fetchLogs = async (token: string, page: number) => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch('/api/user/ai-settings', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          aiProvider: 'openai', // Always use OpenAI
-          openaiApiKey: openaiApiKey.trim(),
-        }),
+      setIsLoadingLogs(true);
+      const response = await fetch(`/api/logs?page=${page}&limit=20`, {
+        headers: { 'Authorization': `Bearer ${token}` },
       });
 
       if (!response.ok) {
-        throw new Error('Failed to save AI settings');
+        throw new Error('Failed to fetch logs');
       }
 
       const data = await response.json();
-      setUser(data.user);
-      setSaveMessage('Open AI settings saved successfully!');
-      setTimeout(() => setSaveMessage(''), 3000);
-    } catch {
-      setSaveMessage('Failed to save Open AI settings. Please try again.');
-      setTimeout(() => setSaveMessage(''), 3000);
+      setLogs(data.logs || []);
+      setLogsPagination(data.pagination);
+    } catch (error) {
+      console.error('Error fetching logs:', error);
     } finally {
-      setIsSaving(false);
+      setIsLoadingLogs(false);
     }
   };
 
-  const handleSaveReplySettings = async () => {
-    setIsSavingReplySettings(true);
-    setReplySettingsMessage('');
+  const handleClearLogs = async () => {
+    if (!confirm('Are you sure you want to clear all logs? This action cannot be undone.')) {
+      return;
+    }
+
+    const token = localStorage.getItem('token');
+    if (!token) return;
 
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch('/api/user/reply-settings', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          ignoreKeywords: ignoreKeywords.trim(),
-        }),
+      setIsClearingLogs(true);
+      const response = await fetch('/api/logs', {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` },
       });
 
       if (!response.ok) {
-        throw new Error('Failed to save reply settings');
+        throw new Error('Failed to clear logs');
       }
 
       const data = await response.json();
-      setUser(data.user);
-      setReplySettingsMessage('Reply settings saved successfully!');
-      setTimeout(() => setReplySettingsMessage(''), 3000);
-    } catch {
-      setReplySettingsMessage('Failed to save reply settings. Please try again.');
-      setTimeout(() => setReplySettingsMessage(''), 3000);
+      alert(data.message);
+
+      // Refresh logs
+      fetchLogs(token, 1);
+    } catch (error) {
+      console.error('Error clearing logs:', error);
+      alert('Failed to clear logs');
     } finally {
-      setIsSavingReplySettings(false);
+      setIsClearingLogs(false);
     }
+  };
+
+  const handlePageChange = (newPage: number) => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    fetchLogs(token, newPage);
+  };
+
+  const getLogLevelColor = (level: string) => {
+    switch (level) {
+      case 'success':
+        return 'text-green-600 bg-green-50 border-green-200';
+      case 'warning':
+        return 'text-yellow-600 bg-yellow-50 border-yellow-200';
+      case 'error':
+        return 'text-red-600 bg-red-50 border-red-200';
+      default:
+        return 'text-blue-600 bg-blue-50 border-blue-200';
+    }
+  };
+
+  const getSourceBadgeColor = (source: string) => {
+    return source === 'send'
+      ? 'bg-purple-100 text-purple-700'
+      : 'bg-teal-100 text-teal-700';
   };
 
   if (isLoading) {
@@ -283,99 +311,120 @@ export default function DashboardPage() {
           </Card>
         </div>
 
-        {/* Open AI Settings */}
-        <div className="grid md:grid-cols-2 gap-6 mb-8">
-          <Card>
-            <CardHeader>
-              <CardTitle>Open AI</CardTitle>
-              <CardDescription>
-                Configure OpenAI for email personalization
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              {/* OpenAI Section */}
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    API Key
-                  </label>
-                  <Input
-                    type="password"
-                    value={openaiApiKey}
-                    onChange={(e) => setOpenaiApiKey(e.target.value)}
-                    placeholder="Enter OpenAI API key"
-                    className="w-full"
-                  />
-                </div>
+        {/* Activity Logs Section */}
+        <Card className="mb-8">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-xl font-bold">Activity Logs</CardTitle>
+                <p className="text-sm text-gray-500 mt-1">
+                  Real-time logs from email sending and receiving processes
+                </p>
               </div>
-
-              {/* Save Button */}
-              <Button 
-                onClick={handleSaveAiSettings}
-                disabled={isSaving}
-                className="w-full"
-              >
-                {isSaving ? 'Saving...' : 'Save Open AI Settings'}
-              </Button>
-
-              {/* Status Message */}
-              {saveMessage && (
-                <div className={`text-sm p-2 rounded ${
-                  saveMessage.includes('success') 
-                    ? 'bg-green-50 text-green-700 border border-green-200' 
-                    : 'bg-red-50 text-red-700 border border-red-200'
-                }`}>
-                  {saveMessage}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Reply Settings</CardTitle>
-              <CardDescription>
-                Configure keywords to ignore from received email replies
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Ignore Keywords in reply
-                  </label>
-                  <Input
-                    type="text"
-                    value={ignoreKeywords}
-                    onChange={(e) => setIgnoreKeywords(e.target.value)}
-                    placeholder="Enter comma-separated keywords to ignore (e.g., unsubscribe, no thanks, not interested)"
-                    className="w-full"
-                  />
-
-                </div>
-
+              <div className="flex gap-2">
                 <Button
-                  onClick={handleSaveReplySettings}
-                  disabled={isSavingReplySettings}
-                  className="w-full"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const token = localStorage.getItem('token');
+                    if (token) fetchLogs(token, logsPagination.page);
+                  }}
+                  disabled={isLoadingLogs}
+                  className="hover:bg-gray-100"
                 >
-                  {isSavingReplySettings ? 'Saving...' : 'Save Reply Settings'}
+                  <RefreshCw className={`w-4 h-4 mr-2 ${isLoadingLogs ? 'animate-spin' : ''}`} />
+                  Refresh
                 </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={handleClearLogs}
+                  disabled={isClearingLogs || logs.length === 0}
+                >
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  {isClearingLogs ? 'Clearing...' : 'Clear All Logs'}
+                </Button>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {isLoadingLogs && logs.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                Loading logs...
+              </div>
+            ) : logs.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                No logs available.
+              </div>
+            ) : (
+              <>
+                <div className="space-y-2 mb-4">
+                  {logs.map((log) => (
+                    <div
+                      key={log._id}
+                      className={`p-3 rounded-lg border ${getLogLevelColor(log.level)}`}
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${getSourceBadgeColor(log.source)}`}>
+                              {log.source.toUpperCase()}
+                            </span>
+                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium border ${getLogLevelColor(log.level)}`}>
+                              {log.level.toUpperCase()}
+                            </span>
+                            <span className="text-xs text-gray-500">
+                              {new Date(log.createdAt).toLocaleString()}
+                            </span>
+                          </div>
+                          <p className="text-sm font-medium">{log.message}</p>
+                          {log.metadata && Object.keys(log.metadata).length > 0 && (
+                            <div className="mt-2 text-xs text-gray-600">
+                              {Object.entries(log.metadata).map(([key, value]) => (
+                                <span key={key} className="mr-3">
+                                  <strong>{key}:</strong> {String(value)}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
 
-                {/* Status Message */}
-                {replySettingsMessage && (
-                  <div className={`text-sm p-2 rounded ${
-                    replySettingsMessage.includes('success')
-                      ? 'bg-green-50 text-green-700 border border-green-200'
-                      : 'bg-red-50 text-red-700 border border-red-200'
-                  }`}>
-                    {replySettingsMessage}
+                {/* Pagination Controls */}
+                {logsPagination.totalPages > 1 && (
+                  <div className="flex items-center justify-between pt-4 border-t">
+                    <div className="text-sm text-gray-600">
+                      Showing page {logsPagination.page} of {logsPagination.totalPages} ({logsPagination.total} total logs)
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handlePageChange(logsPagination.page - 1)}
+                        disabled={logsPagination.page === 1 || isLoadingLogs}
+                      >
+                        <ChevronLeft className="w-4 h-4 mr-1" />
+                        Previous
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handlePageChange(logsPagination.page + 1)}
+                        disabled={!logsPagination.hasMore || isLoadingLogs}
+                      >
+                        Next
+                        <ChevronRight className="w-4 h-4 ml-1" />
+                      </Button>
+                    </div>
                   </div>
                 )}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
 
       </div>
     </div>

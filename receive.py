@@ -26,10 +26,47 @@ sent_emails_collection = db['sentemails']
 contacts_collection = db['contacts']
 campaigns_collection = db['campaigns']
 users_collection = db['users']
+logs_collection = db['logs']
+
+
+def log_message(user_id, message, level='info', metadata=None):
+    """
+    Log a message to the database
+
+    Args:
+        user_id: User ID (ObjectId or string)
+        message: Log message
+        level: Log level ('info', 'success', 'warning', 'error')
+        metadata: Optional dictionary with additional data
+    """
+    try:
+        # Convert user_id to ObjectId if it's a string
+        if isinstance(user_id, str):
+            user_id = ObjectId(user_id)
+
+        current_utc_time = datetime.now(pytz.UTC)
+
+        log_doc = {
+            'userId': user_id,
+            'source': 'receive',
+            'level': level,
+            'message': message,
+            'metadata': metadata or {},
+            'createdAt': current_utc_time,
+            'updatedAt': current_utc_time,
+        }
+
+        logs_collection.insert_one(log_doc)
+        # Also print to console for debugging
+        print(message)
+    except Exception as e:
+        # Fallback to print if logging fails
+        print(f"[LOG ERROR] {message}")
+        print(f"[LOG ERROR] Failed to write to database: {e}")
 
 # Configuration
-CHECK_INTERVAL = 1  # Check every 60 seconds
 EMAILS_TO_FETCH = 50  # Number of emails to fetch per account per check
+DEFAULT_CHECK_INTERVAL = 30  # Default check interval if user setting is not available (in seconds)
 
 
 def should_ignore_email(subject, body, user_id):
@@ -307,7 +344,7 @@ def fetch_emails_from_account(email_account):
     user_id = email_account.get('userId')
     account_id = email_account.get('_id')
 
-    print(f"\n📬 Fetching emails for: {email_address}")
+    log_message(user_id, f"📬 Fetching emails for: {email_address}", level='info')
 
     # Connect to IMAP
     imap = connect_to_imap(email_account)
@@ -330,10 +367,10 @@ def fetch_emails_from_account(email_account):
         message_ids = messages[0].split()
 
         if not message_ids:
-            print(f"   📭 No new emails")
+            log_message(user_id, f"📭 No new emails for {email_address}", level='info')
             return 0
 
-        print(f"   📨 Found {len(message_ids)} new email(s)")
+        log_message(user_id, f"📨 Found {len(message_ids)} new email(s) for {email_address}", level='info')
 
         # Limit to EMAILS_TO_FETCH
         message_ids = message_ids[-EMAILS_TO_FETCH:]
@@ -468,12 +505,23 @@ def fetch_emails_from_account(email_account):
                 insert_result = received_emails_collection.insert_one(received_email_doc)
                 inserted_id = insert_result.inserted_id
 
-                print(f"   ✅ Saved email to database")
-                print(f"      ID: {inserted_id}")
-                print(f"      From: {from_email}")
-                print(f"      Subject: {subject[:60]}...")
+                # Log successful email save
+                email_log_msg = f"✅ Received email from {from_email} - Subject: {subject[:50]}..."
                 if is_reply:
-                    print(f"      🔗 Reply detected! Linked to campaign")
+                    email_log_msg += " (Reply detected)"
+
+                log_message(
+                    user_id,
+                    email_log_msg,
+                    level='success',
+                    metadata={
+                        'emailAccount': email_address,
+                        'from': from_email,
+                        'isReply': is_reply,
+                    }
+                )
+
+                print(f"      ID: {inserted_id}")
 
                 # Update campaign stats if this is a reply
                 if campaign_id and is_reply:
@@ -512,7 +560,7 @@ def main():
     print("=" * 60)
     print("📧 EMAIL RECEIVER - STARTING")
     print("=" * 60)
-    print(f"Check interval: {CHECK_INTERVAL} seconds")
+    print(f"Default check interval: {DEFAULT_CHECK_INTERVAL} seconds")
     print(f"Emails per check: {EMAILS_TO_FETCH}")
     print("=" * 60)
 
@@ -541,10 +589,24 @@ def main():
         except Exception as e:
             print(f"❌ Error in main loop: {e}")
 
+        # Get check interval from user settings
+        check_interval = DEFAULT_CHECK_INTERVAL
+        try:
+            # Get the first active email account to find user
+            if email_accounts and len(email_accounts) > 0:
+                user_id = email_accounts[0].get('userId')
+                if user_id:
+                    user = users_collection.find_one({'_id': ObjectId(user_id)})
+                    if user and user.get('emailCheckDelay'):
+                        check_interval = user.get('emailCheckDelay')
+                        print(f"📊 Using user's email check delay: {check_interval} seconds")
+        except Exception as e:
+            print(f"⚠️  Could not fetch user check interval, using default: {e}")
+
         # Wait before next check
-        print(f"\n⏳ Waiting {CHECK_INTERVAL} seconds until next check...")
+        print(f"\n⏳ Waiting {check_interval} seconds until next check...")
         print("-" * 60)
-        time.sleep(CHECK_INTERVAL)
+        time.sleep(check_interval)
 
 
 if __name__ == "__main__":
